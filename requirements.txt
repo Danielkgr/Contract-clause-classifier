@@ -23,5 +23,8 @@ python-dotenv>=1.0.0
 tqdm>=4.65.0
 requests>=2.31.0
 
+# CLI styling
+rich>=13.0.0
+
 # Optional: GPU monitoring
 pynvml>=11.0.0
