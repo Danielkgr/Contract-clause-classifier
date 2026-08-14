@@ -10,10 +10,90 @@ Evaluate precision, recall, F1, accuracy, inference cost, and latency across all
 
 | Feature | Description |
 | --- | --- |
+| **Interactive CLI** | Styled menu-driven interface (rich) — choose options with numbers, no flags required. Every setting configurable in the CLI. |
 | **Zero-Shot LLM Inference** | Prompt-based classification with OpenAI GPT or any LiteLLM-compatible provider — no training needed. |
 | **Fine-Tuned Transformer** | A `roberta-base` model trained per-clause-type (one-vs-rest binary classification) via HuggingFace `Transformers`. |
 | **Comprehensive Benchmarks** | Precision, Recall, F1, Accuracy, cost-per-document, and latency metrics — both aggregate and per-clause-type. |
 | **Automated Reporting** | Generates CSV metric tables, bar-chart visualizations, a summary memo, and a full engineering report. |
+| **CLI Configuration** | All settings (LLM provider/model/API key/temperature/tokens, training params, clause types, output path) configurable via the menu — no `.env` edits needed. |
+| **Legacy Flags** | `--quick-test`, `--max-samples N`, `--output DIR` still work and auto-skip the menu. |
+
+---
+
+## 🖥️ Usage
+
+### Start the Interactive CLI
+
+```bash
+python compare_classifiers.py
+```
+
+You'll see a styled main menu:
+
+```
+═══════════════════ Main Menu ════════════════════
+  1. Quick test (~50 samples)
+  2. Full comparison (train + evaluate)
+  3. Train only
+  4. Evaluate only (use existing model)
+  5. Configure settings
+  6. View configuration
+  7. Export / Import settings
+  8. Exit
+
+Choose an option [1]:
+```
+
+### Menu Actions
+
+| # | Action | What it does |
+|---|--------|-------------|
+| **1** | Quick test | Runs a fast evaluation (~50 samples) with zero-shot LLM only — skips training |
+| **2** | Full comparison | Downloads data, trains the fine-tuned model, evaluates both classifiers end-to-end |
+| **3** | Train only | Loads the CUAD training set and trains a new fine-tuned model (no evaluation) |
+| **4** | Evaluate only | Uses an existing model from `models/fine_tuned/` — skips training step |
+| **5** | Configure settings | Opens the configuration submenu (see below) |
+| **6** | View configuration | Shows a read-only summary of all active settings |
+| **7** | Export / Import | Write current config to `.env.local` or view the environment table |
+
+#### Configuration Sub-Menu
+
+Accessed via option **5**, the configuration menu lets you change every setting:
+
+```
+═══════════ Configuration Menu ═══════════
+  1. LLM Settings (provider, model, API key, temp, tokens, base URL)
+  2. Training Settings (model, epochs, lr, batch size, max length, …)
+  3. Clause Types (select / add / remove)
+  4. Output Directory
+  0. Back to main menu
+```
+
+**LLM Settings** — Configure provider (`openai` / `anthropic` / `google` / custom), model name, API key, base URL, temperature, and max tokens.
+
+**Training Settings** — Configure training model name, epochs, batch size, learning rate, max token length, weight decay, warmup steps, eval steps, save steps.
+
+**Clause Types** — Interactive checker-list of active clause types plus options to add custom clause types, remove individual ones, or load all 12 CUAD defaults.
+
+**Output Directory** — Change where results are saved (creates the directory if needed).
+
+### Legacy Flags (Non-Interactive Mode)
+
+Pass any flag and the menu is skipped automatically:
+
+```bash
+# Quick test — ~50 samples, skips fine-tuned model training
+python compare_classifiers.py --quick-test
+
+# Limit evaluation to N samples
+python compare_classifiers.py --max-samples 200
+
+# Custom output directory
+python compare_classifiers.py --output ./custom_output
+
+# Combine flags
+python compare_classifiers.py --quick-test --max-samples 50 --output ./results
+```
 
 ---
 
@@ -44,7 +124,9 @@ The classifier evaluates all 12 standard CUAD clauses:
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### 2. (Optional) Set Environment Variables
+
+All settings are configurable via the interactive CLI menu — the `.env` file is **optional**. If you do want a persistent environment:
 
 ```bash
 cp .env.example .env
@@ -74,20 +156,12 @@ cp .env.example .env
 ### 3. Run the Comparison
 
 ```bash
-# Quick test — ~50 samples, skips fine-tuned model training
-python compare_classifiers.py --quick-test
-
-# Full comparison — trains RoBERTa on the CUAD train set and benchmarks both
+# Interactive (default) — styled menu, all settings configurable in-app
 python compare_classifiers.py
+
+# Legacy flag — skips menu, runs quick test
+python compare_classifiers.py --quick-test
 ```
-
-#### CLI Options
-
-| Flag | Type | Description |
-|---|---|---|
-| `--max-samples` | `int` | Limit evaluation to N samples |
-| `--quick-test` | `flag` | Run a fast, limited-sample test (skips training) |
-| `--output` | `str` | Custom output directory for results |
 
 ---
 
@@ -95,11 +169,11 @@ python compare_classifiers.py
 
 ```
 Contract-clause-classifier/
-├── compare_classifiers.py        # Entry point — full comparison pipeline
+├── compare_classifiers.py        # Entry point — interactive CLI + pipeline
 ├── config.py                     # Dataclass-driven env-var configuration
 ├── evaluation.ipynb              # Interactive Jupyter notebook
 ├── requirements.txt              # Python dependencies
-├── .env.example                  # Environment variable template
+├── .env.example                  # Environment variable template (optional)
 ├── utils/
 │   ├── __init__.py               # Public API exports
 │   ├── llm_client.py             # Zero-shot LLM client (OpenAI + LiteLLM)
@@ -111,7 +185,6 @@ Contract-clause-classifier/
 └── outputs/                      # Generated results (created on run)
     ├── comparison_metrics.csv     # Per-clause-type, per-method metrics
     ├── comparison_plot.png        # 2×2 bar chart — precision / recall / F1 / accuracy
-    ├── cost_latency_comparison.png
     ├── summary.md                 # Quick-text summary
     └── comparison_report.md       # Full engineering report
 ```
@@ -207,6 +280,7 @@ All artifacts are written to the `outputs/` directory.
 
 | Category | Library |
 |---|---|
+| **CLI** | `rich` (Panel, Prompt, Live, Table, Tree) |
 | **ML / DL** | `torch`, `transformers`, `accelerate` |
 | **Dataset** | `datasets` (HuggingFace) |
 | **Evaluation** | `scikit-learn`, `numpy` |

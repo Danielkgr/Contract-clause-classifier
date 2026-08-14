@@ -2,12 +2,18 @@
 Contract Clause Classifier — Interactive CLI
 
 Run ``python compare_classifiers.py`` and choose options from a styled
-menu instead of remembering argparse flags.
+menu. Every setting (LLM provider / model / API key, training params,
+clause types, output path) is configurable inside the CLI — no manual
+`.env` edits required.
+
+Legacy flags still work: ``--quick-test``, ``--max-samples N``,
+``--output DIR``, ``--interactive``.
 """
 
 import os
 import sys
 import logging
+import argparse
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
@@ -18,7 +24,7 @@ import matplotlib.pyplot as plt
 # ------------------------------------------------------------------ rich ---
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt, IntPrompt, Confirm
+from rich.prompt import Prompt, IntPrompt, FloatPrompt, Confirm
 from rich.rule import Rule
 from rich.live import Live
 from rich.logging import RichHandler
@@ -83,6 +89,7 @@ def _main_menu() -> int:
         ("Evaluate only (use existing model)", "evaluate"),
         ("Configure settings", "configure"),
         ("View configuration", "view_config"),
+        ("Export / Import settings", "export_import"),
         ("Exit", "exit"),
     ]
 
@@ -100,77 +107,337 @@ def _main_menu() -> int:
     return choice
 
 
-def _configure_clause_types() -> List[str]:
-    """Let user select clause types to evaluate."""
-    all_types = config.data.clause_types
-    console.print()
-    console.print(Rule("[bold]Select Clause Types[/]", style="bold cyan"))
-
-    selected = []
-    for i, ct in enumerate(all_types, 1):
-        ok = Confirm.ask(f"  [cyan]{i}[/]. {ct}", default=True)
-        if ok:
-            selected.append(ct)
-
-    return selected
-
+# ----------------------------------------------------------------------- #
+# Configuration sub-menus                                                  #
+# ----------------------------------------------------------------------- #
 
 def _configure_llm_settings():
-    """Let user adjust LLM provider / model."""
+    """Full LLM configuration: provider, model, API key, temperature, max tokens, base URL."""
     console.print()
     console.print(Rule("[bold]LLM Configuration[/]", style="bold cyan"))
-    console.print(
-        f"  Current: [green]{config.llm.provider}[/] / "
-        f"[green]{config.llm.model}[/]"
-    )
 
+    # Provider
     provider = Prompt.ask(
-        "  LLM provider",
+        "  [cyan]1[/]. Provider",
         default=config.llm.provider,
-        choices=["openai", "anthropic", "google"],
+        choices=["openai", "anthropic", "google", "custom"],
     )
     config.llm.provider = provider
 
-    model = Prompt.ask("  Model name", default=config.llm.model)
+    # Model
+    model = Prompt.ask("  [cyan]2[/]. Model name", default=config.llm.model)
     config.llm.model = model
+
+    # API Key
+    api_key = Prompt.ask("  [cyan]3[/]. API key", default=config.llm.api_key or "(not set)")
+    config.llm.api_key = api_key if api_key != "(not set)" else None
+
+    # Base URL
+    base_url = Prompt.ask("  [cyan]4[/]. Base URL (optional)", default=config.llm.base_url or "(none)")
+    config.llm.base_url = base_url if base_url != "(none)" else None
+
+    # Temperature
+    temp_str = Prompt.ask("  [cyan]5[/]. Temperature", default=str(config.llm.temperature))
+    try:
+        config.llm.temperature = float(temp_str)
+    except ValueError:
+        console.print("  [yellow]Invalid temperature; keeping previous value.[/]")
+
+    # Max tokens
+    max_t_str = Prompt.ask("  [cyan]6[/]. Max tokens", default=str(config.llm.max_tokens))
+    try:
+        config.llm.max_tokens = int(max_t_str)
+    except ValueError:
+        console.print("  [yellow]Invalid max tokens; keeping previous value.[/]")
+
+    # Cost presets for known models
+    if config.llm.model in ("gpt-3.5-turbo", "gpt-4o"):
+        console.print("  [green]✓ Cost preset applied from model name[/]")
 
 
 def _configure_training_settings():
+    """Training configuration: model name, epochs, batch size, lr, max length, weight decay, warmup, eval/save steps."""
     console.print()
     console.print(Rule("[bold]Training Configuration[/]", style="bold cyan"))
-    console.print(
-        f"  Current: {config.training.model_name}, "
-        f"{config.training.num_epochs} epochs, lr={config.training.learning_rate}"
+
+    model_name = Prompt.ask(
+        "  [cyan]1[/]. Model name",
+        default=config.training.model_name,
     )
+    config.training.model_name = model_name
 
-    batch_size = Prompt.ask("  Batch size", default=str(config.training.batch_size))
-    config.training.batch_size = int(batch_size)
+    epochs_str = Prompt.ask("  [cyan]2[/]. Epochs", default=str(config.training.num_epochs))
+    try:
+        config.training.num_epochs = int(epochs_str)
+    except ValueError:
+        console.print("  [yellow]Invalid epochs; keeping previous value.[/]")
 
-    epochs = Prompt.ask("  Number of epochs", default=str(config.training.num_epochs))
-    config.training.num_epochs = int(epochs)
+    bs_str = Prompt.ask("  [cyan]3[/]. Batch size", default=str(config.training.batch_size))
+    try:
+        config.training.batch_size = int(bs_str)
+    except ValueError:
+        console.print("  [yellow]Invalid batch size; keeping previous value.[/]")
 
-    lr = Prompt.ask("  Learning rate", default=str(config.training.learning_rate))
-    config.training.learning_rate = float(lr)
+    lr_str = Prompt.ask(
+        "  [cyan]4[/]. Learning rate",
+        default=str(config.training.learning_rate),
+    )
+    try:
+        config.training.learning_rate = float(lr_str)
+    except ValueError:
+        console.print("  [yellow]Invalid learning rate; keeping previous value.[/]")
 
+    ml_str = Prompt.ask(
+        "  [cyan]5[/]. Max token length",
+        default=str(config.training.max_length),
+    )
+    try:
+        config.training.max_length = int(ml_str)
+    except ValueError:
+        console.print("  [yellow]Invalid max length; keeping previous value.[/]")
+
+    wd_str = Prompt.ask(
+        "  [cyan]6[/]. Weight decay",
+        default=str(config.training.weight_decay),
+    )
+    try:
+        config.training.weight_decay = float(wd_str)
+    except ValueError:
+        console.print("  [yellow]Invalid weight decay; keeping previous value.[/]")
+
+    ws_str = Prompt.ask(
+        "  [cyan]7[/]. Warmup steps",
+        default=str(config.training.warmup_steps),
+    )
+    try:
+        config.training.warmup_steps = int(ws_str)
+    except ValueError:
+        console.print("  [yellow]Invalid warmup steps; keeping previous value.[/]")
+
+    es_str = Prompt.ask(
+        "  [cyan]8[/]. Eval steps",
+        default=str(config.training.eval_steps),
+    )
+    try:
+        config.training.eval_steps = int(es_str)
+    except ValueError:
+        console.print("  [yellow]Invalid eval steps; keeping previous value.[/]")
+
+    ss_str = Prompt.ask(
+        "  [cyan]9[/]. Save steps",
+        default=str(config.training.save_steps),
+    )
+    try:
+        config.training.save_steps = int(ss_str)
+    except ValueError:
+        console.print("  [yellow]Invalid save steps; keeping previous value.[/]")
+
+
+def _configure_clause_types_menu():
+    """Interactive clause-type selection with add / remove support."""
+    all_types = list(config.data.clause_types)
+
+    while True:
+        console.print()
+        console.print(Rule("[bold]Clause Types[/]", style="bold cyan"))
+        console.print(f"  [dim]Active ({len(all_types)}):[/]")
+        for i, ct in enumerate(all_types, 1):
+            console.print(f"    [cyan]{i}[/]. [green]✓[/] {ct}")
+
+        # Show CUAD defaults that aren't active yet (only if list is small)
+        cuad_defaults = [
+            "Agreement Effectiveness", "Agreement Termination", "Anti-Assignment",
+            "Arbitration", "Attorneys' Fees", "Notice", "Governing Law",
+            "Indemnification", "Jurisdiction", "Severability", "Waiver", "Warranty",
+        ]
+        extra = [ct for ct in cuad_defaults if ct not in all_types]
+        if extra:
+            console.print()
+            console.print("  [dim]Available CUAD defaults:[/]", style="dim")
+            for ct in extra:
+                console.print(f"    • {ct}")
+
+        console.print()
+        console.print("  [bold yellow]1[/]. Toggle active clauses")
+        console.print("  [bold yellow]2[/]. Add custom clause type")
+        console.print("  [bold yellow]3[/]. Remove selected clause type")
+        console.print("  [bold yellow]4[/]. Select all CUAD defaults")
+        console.print("  [bold yellow]0[/]. Back to configuration menu")
+
+        choice = Prompt.ask(
+            "Choose action",
+            choices=["0", "1", "2", "3", "4"],
+            default="0",
+        )
+
+        if choice == "0":
+            # Update the config list and return
+            config.data.clause_types = all_types
+            break
+
+        elif choice == "1":
+            console.print()
+            for i, ct in enumerate(all_types, 1):
+                ok = Confirm.ask(f"  [cyan]{i}[/]. {ct}", default=True)
+                if not ok:
+                    all_types.remove(ct)
+
+        elif choice == "2":
+            new_ct = Prompt.ask("  Enter new clause type name")
+            if new_ct and new_ct.strip():
+                config.data.add_clause_type(new_ct.strip())
+                all_types = list(config.data.clause_types)
+
+        elif choice == "3":
+            if not all_types:
+                console.print("  [yellow]No clauses to remove.[/]")
+                continue
+            ct = Prompt.ask(
+                "  Enter clause type name to remove",
+                choices=all_types,
+            )
+            config.data.remove_clause_type(ct)
+            all_types = list(config.data.clause_types)
+
+        elif choice == "4":
+            for ct in cuad_defaults:
+                config.data.add_clause_type(ct)
+            all_types = list(config.data.clause_types)
+
+
+def _configure_output_dir():
+    new_dir = Prompt.ask("  Output directory path", default=config.paths.outputs_dir)
+    if new_dir != config.paths.outputs_dir:
+        config.paths.outputs_dir = new_dir
+        os.makedirs(new_dir, exist_ok=True)
+        console.print(f"  [green]✓ Output dir updated to:[/]\n    [dim]{new_dir}[/]")
+
+
+def _configure_menu():
+    """Top-level configuration submenu covering every setting."""
+    while True:
+        console.print()
+        console.print(Rule("[bold]Configuration Menu[/]", style="bold cyan"))
+        console.print("  [bold yellow]1[/]. LLM Settings (provider, model, API key, temp, tokens, base URL)")
+        console.print("  [bold yellow]2[/]. Training Settings (model, epochs, lr, batch size, max length, …)")
+        console.print("  [bold yellow]3[/]. Clause Types (select / add / remove)")
+        console.print("  [bold yellow]4[/]. Output Directory")
+        console.print("  [bold yellow]0[/]. Back to main menu")
+
+        choice = Prompt.ask(
+            "Choose setting",
+            choices=["0", "1", "2", "3", "4"],
+            default="0",
+        )
+
+        if choice == "0":
+            break
+        elif choice == "1":
+            _configure_llm_settings()
+        elif choice == "2":
+            _configure_training_settings()
+        elif choice == "3":
+            _configure_clause_types_menu()
+        elif choice == "4":
+            _configure_output_dir()
+
+
+def _export_import_menu():
+    """Export / Import settings as .env or JSON."""
+    console.print()
+    console.print(Rule("[bold]Settings[/]", style="bold cyan"))
+    console.print("  [bold yellow]1[/]. Export to .env")
+    console.print("  [bold yellow]2[/]. Show current environment (read-only)")
+    console.print("  [bold yellow]0[/]. Back")
+
+    choice = Prompt.ask("Choose action", choices=["0", "1", "2"], default="0")
+    if choice == "1":
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.local")
+        with open(path, "w") as f:
+            f.write(f"LLM_PROVIDER={config.llm.provider}\n")
+            f.write(f"LLM_MODEL={config.llm.model}\n")
+            f.write(f"LLM_API_KEY={config.llm.api_key or ''}\n")
+            f.write(f"LLM_BASE_URL={config.llm.base_url or ''}\n")
+            f.write(f"LLM_TEMPERATURE={config.llm.temperature}\n")
+            f.write(f"LLM_MAX_TOKENS={config.llm.max_tokens}\n")
+            f.write(f"TRAIN_MODEL={config.training.model_name}\n")
+            f.write(f"BATCH_SIZE={config.training.batch_size}\n")
+            f.write(f"LR={config.training.learning_rate}\n")
+            f.write(f"NUM_EPOCHS={config.training.num_epochs}\n")
+            f.write(f"MAX_LENGTH={config.training.max_length}\n")
+            f.write(f"WEIGHT_DECAY={config.training.weight_decay}\n")
+            f.write(f"WARMUP_STEPS={config.training.warmup_steps}\n")
+            f.write(f"EVAL_STEPS={config.training.eval_steps}\n")
+            f.write(f"SAVE_STEPS={config.training.save_steps}\n")
+        console.print(Panel(
+            f"[green]✓ Settings exported to:[/]\n  [dim]{path}[/]",
+            border_style="green",
+        ))
+
+    elif choice == "2":
+        table = Table(title="Current Environment (would be written to .env)", show_header=True)
+        table.add_column("Variable")
+        table.add_column("Value", style="green")
+        for row in [
+            ("LLM_PROVIDER", config.llm.provider),
+            ("LLM_MODEL", config.llm.model),
+            ("LLM_API_KEY", config.llm.api_key or "(not set)"),
+            ("LLM_BASE_URL", config.llm.base_url or ""),
+            ("LLM_TEMPERATURE", str(config.llm.temperature)),
+            ("LLM_MAX_TOKENS", str(config.llm.max_tokens)),
+            ("TRAIN_MODEL", config.training.model_name),
+            ("BATCH_SIZE", str(config.training.batch_size)),
+            ("LR", str(config.training.learning_rate)),
+            ("NUM_EPOCHS", str(config.training.num_epochs)),
+            ("MAX_LENGTH", str(config.training.max_length)),
+            ("WEIGHT_DECAY", str(config.training.weight_decay)),
+            ("WARMUP_STEPS", str(config.training.warmup_steps)),
+            ("EVAL_STEPS", str(config.training.eval_steps)),
+            ("SAVE_STEPS", str(config.training.save_steps)),
+        ]:
+            table.add_row(*row)
+        console.print(table)
+
+
+# ----------------------------------------------------------------------- #
+# View config (read-only summary)                                         #
+# ----------------------------------------------------------------------- #
 
 def _view_config():
     table = Table(title="Current Configuration", show_header=True, header_style="bold cyan")
-    table.add_column("Setting", style="dim")
+    table.add_column("Category")
+    table.add_column("Setting")
     table.add_column("Value", style="green")
 
-    for row in [
-        ("LLM Provider", config.llm.provider),
-        ("LLM Model", config.llm.model),
-        ("Training Model", config.training.model_name),
-        ("Epochs", str(config.training.num_epochs)),
-        ("Batch Size", str(config.training.batch_size)),
-        ("Learning Rate", str(config.training.learning_rate)),
-        ("Output Dir", config.paths.outputs_dir),
-    ]:
+    rows = [
+        ("LLM", "Provider", config.llm.provider),
+        ("LLM", "Model", config.llm.model),
+        ("LLM", "API Key", (config.llm.api_key or "(not set)")[:32] + ("…" if len(config.llm.api_key or "") > 32 else "")),
+        ("LLM", "Base URL", config.llm.base_url or "(none)"),
+        ("LLM", "Temperature", str(config.llm.temperature)),
+        ("LLM", "Max Tokens", str(config.llm.max_tokens)),
+        ("Training", "Model", config.training.model_name),
+        ("Training", "Epochs", str(config.training.num_epochs)),
+        ("Training", "Batch Size", str(config.training.batch_size)),
+        ("Training", "Learning Rate", str(config.training.learning_rate)),
+        ("Training", "Max Length", str(config.training.max_length)),
+        ("Training", "Weight Decay", str(config.training.weight_decay)),
+        ("Training", "Warmup Steps", str(config.training.warmup_steps)),
+        ("Training", "Eval Steps", str(config.training.eval_steps)),
+        ("Training", "Save Steps", str(config.training.save_steps)),
+        ("Data", "Clause Types", f"{len(config.data.clause_types)} active"),
+        ("Paths", "Output Dir", config.paths.outputs_dir),
+    ]
+
+    for row in rows:
         table.add_row(*row)
 
     console.print(table)
 
+
+# ----------------------------------------------------------------------- #
+# Results display helpers                                                   #
+# ----------------------------------------------------------------------- #
 
 def _show_results_table(zs_metrics, ft_metrics):
     """Render a Rich comparison table."""
@@ -206,8 +473,18 @@ def _show_results_table(zs_metrics, ft_metrics):
     console.print(table)
 
 
+def _show_clause_dist(dist):
+    table = Table(title="Clause Distribution", show_header=True)
+    table.add_column("Clause Type", style="dim")
+    table.add_column("Present", style="green")
+    table.add_column("Absent", style="red")
+    for row in dist.itertuples():
+        table.add_row(row.clause_type, str(row.present), str(row.absent))
+    console.print(table)
+
+
 # ----------------------------------------------------------------------- #
-# Core comparison logic (extracted from old script for clarity)             #
+# Core comparison logic                                                     #
 # ----------------------------------------------------------------------- #
 
 def _run_comparison(
@@ -219,21 +496,16 @@ def _run_comparison(
         clause_types = config.data.clause_types
 
     console.print()
-    with Live(
-        "[bold cyan]Loading dataset...",
-        refresh_per_second=4,
-    ) as live:
+    with Live("[bold cyan]Loading dataset…", refresh_per_second=4):
         contracts = load_cuad_dataset(
             split="test",
             max_samples=max_samples if not quick_test else 50,
         )
-        live.update(f"[bold green]✓ Loaded {len(contracts)} contracts")
 
-    console.print()
+    console.print(f"  [bold green]✓ Loaded {len(contracts)} contracts[/]")
     distribution = get_clause_distribution(contracts)
     _show_clause_dist(distribution)
 
-    # Build (text, label) pairs
     texts_by_clause: Dict[str, List[str]] = {ct: [] for ct in clause_types}
     labels_by_clause: Dict[str, List[int]] = {ct: [] for ct in clause_types}
     for contract in contracts:
@@ -247,7 +519,7 @@ def _run_comparison(
 
     if not quick_test:
         console.print()
-        with Live("[bold cyan]Training fine-tuned model...", refresh_per_second=4) as live:
+        with Live("[bold cyan]Training fine-tuned model…", refresh_per_second=4):
             train_contracts = load_cuad_dataset(
                 split="train",
                 max_samples=1000 if max_samples is None else min(max_samples, 1000),
@@ -294,8 +566,7 @@ def _run_comparison(
             max_latency_ms=max((z.latency_ms for z in zero_shot_stats), default=0),
             total_cost_usd=sum(z.cost_usd for z in zero_shot_stats),
             avg_cost_usd=(sum(z.cost_usd for z in zero_shot_stats) / num_documents) if num_documents else 0,
-            input_tokens=0,
-            output_tokens=0,
+            input_tokens=0, output_tokens=0,
         ),
         fine_tuned_stats=InferenceStats(
             total_latency_ms=ft_total,
@@ -304,8 +575,7 @@ def _run_comparison(
             max_latency_ms=max((f.latency_ms for f in fine_tuned_stats), default=0),
             total_cost_usd=sum(f.cost_usd for f in fine_tuned_stats),
             avg_cost_usd=(sum(f.cost_usd for f in fine_tuned_stats) / num_documents) if num_documents else 0,
-            input_tokens=0,
-            output_tokens=0,
+            input_tokens=0, output_tokens=0,
         ),
         training_result=training_result,
         cost_per_document={
@@ -313,20 +583,6 @@ def _run_comparison(
             "fine_tuned": (sum(f.cost_usd for f in fine_tuned_stats) / num_documents) if num_documents else 0,
         },
     )
-
-
-# ----------------------------------------------------------------------- #
-# Evaluation helpers                                                        #
-# ----------------------------------------------------------------------- #
-
-def _show_clause_dist(dist):
-    table = Table(title="Clause Distribution", show_header=True)
-    table.add_column("Clause Type", style="dim")
-    table.add_column("Present", style="green")
-    table.add_column("Absent", style="red")
-    for row in dist.itertuples():
-        table.add_row(row.clause_type, str(row.present), str(row.absent))
-    console.print(table)
 
 
 def _eval_zero_shot(llm_client, texts_by_clause, labels_by_clause, clause_types, quick_test):
@@ -339,7 +595,7 @@ def _eval_zero_shot(llm_client, texts_by_clause, labels_by_clause, clause_types,
         eval_labels = labels_by_clause[ct][:100] if quick_test else labels_by_clause[ct]
 
         preds, costs, latencies = [], [], []
-        console.print(f"[cyan]  Evaluating {ct} with Zero-Shot LLM...[/]")
+        console.print(f"[cyan]  Evaluating {ct} with Zero-Shot LLM…[/]")
         for text in eval_texts:
             t0 = time.time()
             resp = llm_client.classify_single(text, ct)
@@ -351,12 +607,9 @@ def _eval_zero_shot(llm_client, texts_by_clause, labels_by_clause, clause_types,
         m = calculate_metrics(eval_labels, preds, ct)
         metrics[ct] = m
         stats_list.append(InferenceStats(
-            total_latency_ms=sum(latencies),
-            avg_latency_ms=np.mean(latencies),
-            min_latency_ms=min(latencies),
-            max_latency_ms=max(latencies),
-            total_cost_usd=sum(costs),
-            avg_cost_usd=np.mean(costs),
+            total_latency_ms=sum(latencies), avg_latency_ms=np.mean(latencies),
+            min_latency_ms=min(latencies), max_latency_ms=max(latencies),
+            total_cost_usd=sum(costs), avg_cost_usd=np.mean(costs),
             input_tokens=0, output_tokens=0,
         ))
 
@@ -376,19 +629,17 @@ def _eval_finetuned(fine_tuned, texts_by_clause, labels_by_clause, clause_types,
         eval_texts = texts_by_clause[ct][:100] if quick_test else texts_by_clause[ct]
         eval_labels = labels_by_clause[ct][:100] if quick_test else labels_by_clause[ct]
 
-        console.print(f"[cyan]  Evaluating {ct} with Fine-Tuned...[/]")
+        console.print(f"[cyan]  Evaluating {ct} with Fine-Tuned…[/]")
         preds, probs, avg_lat = fine_tuned.predict(eval_texts)
         est_cost = (avg_lat / 1000) * 0.001
 
         m = calculate_metrics(eval_labels, preds, ct)
         metrics[ct] = m
         stats_list.append(InferenceStats(
-            total_latency_ms=avg_lat * len(eval_texts),
-            avg_latency_ms=avg_lat,
+            total_latency_ms=avg_lat * len(eval_texts), avg_latency_ms=avg_lat,
             min_latency_ms=avg_lat * 0.5 if avg_lat else 0,
             max_latency_ms=avg_lat * 1.5 if avg_lat else 0,
-            total_cost_usd=est_cost * len(eval_texts),
-            avg_cost_usd=est_cost,
+            total_cost_usd=est_cost * len(eval_texts), avg_cost_usd=est_cost,
             input_tokens=0, output_tokens=0,
         ))
 
@@ -531,38 +782,6 @@ def _plot_results(result: ComparisonResult):
 
 
 # ----------------------------------------------------------------------- #
-# Sub-menus                                                                 #
-# ----------------------------------------------------------------------- #
-
-def _configure_menu():
-    while True:
-        console.print()
-        console.print(Rule("[bold]Configuration[/]", style="bold cyan"))
-        console.print("  [bold yellow]1[/]. Clause Types")
-        console.print("  [bold yellow]2[/]. LLM Settings")
-        console.print("  [bold yellow]3[/]. Training Settings")
-        console.print("  [bold yellow]4[/]. Output Directory")
-        console.print("  [bold yellow]0[/]. Back to main menu")
-        choice = Prompt.ask(
-            "Choose setting",
-            choices=["0", "1", "2", "3", "4"],
-            default="0",
-        )
-        if choice == "0":
-            break
-        if choice == "1":
-            config.data.clause_types = _configure_clause_types()
-        elif choice == "2":
-            _configure_llm_settings()
-        elif choice == "3":
-            _configure_training_settings()
-        elif choice == "4":
-            new_dir = Prompt.ask("  Output directory path", default=config.paths.outputs_dir)
-            config.paths.outputs_dir = new_dir
-            os.makedirs(new_dir, exist_ok=True)
-
-
-# ----------------------------------------------------------------------- #
 # Interactive run flow                                                      #
 # ----------------------------------------------------------------------- #
 
@@ -580,9 +799,17 @@ def _interactive_run(run_mode: str):
         if quick_test:
             max_samples = 200
 
-    # Clause types
-    if not quick_test or run_mode in ("auto_quick", "full"):
-        clause_types = _configure_clause_types() if (not config.data.clause_types and run_mode == "none") else list(config.data.clause_types)
+    # Clause types — ask unless already running fast-quick
+    if not quick_test or run_mode in ("auto_quick",):
+        if Confirm.ask(
+            "  Keep [bold]current clause types[/]?",
+            default=True,
+        ):
+            clause_types = list(config.data.clause_types)
+        else:
+            clause_types = _configure_clause_types_menu()
+            # Save the selection for future runs
+            config.data.clause_types = clause_types
 
     # Max samples
     if not quick_test:
@@ -592,16 +819,14 @@ def _interactive_run(run_mode: str):
         )
         max_samples = int(ms_val) if ms_val.isdigit() and int(ms_val) > 0 else None
 
-    # Run
+    # ---- Run comparison ----
     console.print()
-    with Live("[bold cyan]Running comparison...", refresh_per_second=4) as live:
+    with Live("[bold cyan]Running comparison…", refresh_per_second=4):
         result = _run_comparison(
             max_samples=max_samples,
             clause_types=clause_types,
             quick_test=quick_test,
         )
-
-    live.update(f"[bold green]✓ Comparison complete!")
 
     # Show results
     console.print()
@@ -620,11 +845,7 @@ def _interactive_run(run_mode: str):
         ("avg_f1", "F1 Score"),
         ("avg_accuracy", "Accuracy"),
     ]:
-        summary_table.add_row(
-            label,
-            f"{agg_zs.get(key, 0):.4f}",
-            f"{agg_ft.get(key, 0):.4f}",
-        )
+        summary_table.add_row(label, f"{agg_zs.get(key, 0):.4f}", f"{agg_ft.get(key, 0):.4f}")
     console.print(summary_table)
 
     # Save artifacts
@@ -635,7 +856,7 @@ def _interactive_run(run_mode: str):
 
     # Show tree of outputs
     tree = Tree("[bold]Output files[/]")
-    for fname in os.listdir(config.paths.outputs_dir):
+    for fname in sorted(os.listdir(config.paths.outputs_dir)):
         tree.add(f"[green]{fname}[/]")
 
     console.print()
@@ -652,27 +873,22 @@ def _interactive_run(run_mode: str):
 
 def main():
     """Interactive CLI entry point."""
-    # Backward compat: if any legacy flags are present, fall back to non-interactive mode
     import argparse
 
-    parser = argparse.ArgumentParser(description="Compare contract clause classifiers (interactive by default)")
-    parser.add_argument("--max-samples", type=int, default=None, help="Maximum samples to evaluate")
-    parser.add_argument("--quick-test", action="store_true", help="Run quick test with limited samples")
-    parser.add_argument("--output", type=str, default=None, help="Output directory for results")
-    parser.add_argument("--interactive", action="store_true", help="Force interactive menu (default)")
+    parser = argparse.ArgumentParser(
+        description="Compare contract clause classifiers (interactive by default)",
+    )
+    parser.add_argument("--max-samples", type=int, default=None, help="Limit evaluation to N samples")
+    parser.add_argument("--quick-test", action="store_true", help="Run a fast, limited-sample test")
+    parser.add_argument("--output", type=str, default=None, help="Custom output directory for results")
 
-    args, unknown = parser.parse_known_args()
-
-    # If unknown flags are present, something unexpected was passed — warn and go interactive
-    if unknown:
-        console.print(f"[yellow]Warning: unknown arguments ignored: {unknown}[/]")
+    args = parser.parse_args()
 
     if args.output:
         config.paths.outputs_dir = args.output
         os.makedirs(args.output, exist_ok=True)
 
-    # Show menu unless --quick-test or --max-samples was explicitly provided
-    use_menu = not args.quick_test and args.max_samples is None
+    use_menu = not (args.quick_test or args.max_samples is not None)
 
     if use_menu:
         _header()
@@ -680,56 +896,57 @@ def main():
     while True and use_menu:
         choice = _main_menu()
 
-        if choice == 1:           # Quick test
-            console.print("[cyan]Running quick test (~50 samples) ...[/]")
+        if choice == 1:
+            console.print("[cyan]Running quick test (~50 samples)…[/]")
             _interactive_run("auto_quick")
 
-        elif choice == 2:         # Full comparison
+        elif choice == 2:
             if not Confirm.ask("Start full comparison (downloads data, trains model)?"):
                 continue
             _interactive_run("none")
 
-        elif choice == 3:         # Train only
+        elif choice == 3:
             clause_types = list(config.data.clause_types)
             ms_val = Prompt.ask("  Max training samples", default="1000")
             max_samples = int(ms_val) if ms_val.isdigit() else 1000
 
-            console.print(f"[cyan]Downloading {max_samples} train samples...[/]")
+            console.print(f"[cyan]Loading {max_samples} train samples…[/]")
             contracts = load_cuad_dataset(split="train", max_samples=max_samples)
             texts, labels = preprocess_data(contracts, clause_types)
 
             fine_tuned = FineTunedClassifier()
             train_ds, val_ds, _ = fine_tuned.prepare_data(texts, labels, test_size=0.2, val_size=0.1)
-            console.print("[cyan]Training...[/]")
+            console.print("[cyan]Training…[/]")
             result = fine_tuned.train(train_ds, val_ds)
-            console.print(
-                Panel(
-                    f"[green]✓ Training complete[/]\n"
-                    f"  Time: {result.training_time_seconds:.1f}s\n"
-                    f"  Metrics: {result.metrics}",
-                    border_style="green",
-                )
-            )
+            console.print(Panel(
+                f"[green]✓ Training complete[/]\n"
+                f"  Time: {result.training_time_seconds:.1f}s\n"
+                f"  Metrics: {result.metrics}",
+                border_style="green",
+            ))
 
-        elif choice == 4:         # Evaluate only
+        elif choice == 4:
             _interactive_run("none")
 
-        elif choice == 5:         # Configure
+        elif choice == 5:
             _configure_menu()
 
-        elif choice == 6:         # View config
+        elif choice == 6:
             _view_config()
 
-        elif choice == 7:         # Exit
+        elif choice == 7:
+            _export_import_menu()
+
+        elif choice == 8:
             console.print("[bold yellow]Goodbye![/]")
             break
 
-    # Non-interactive mode: run comparison directly with legacy args
+    # Non-interactive mode (legacy flags)
     if not use_menu:
         if args.quick_test:
-            console.print("[cyan]Running quick test (--quick-test flag)...[/]")
+            console.print("[cyan]Running quick test (--quick-test flag)…[/]")
         elif args.max_samples is not None:
-            console.print(f"[cyan]Running full comparison (max-samples={args.max_samples})...[/]")
+            console.print(f"[cyan]Running full comparison (max-samples={args.max_samples})…[/]")
         _interactive_run("auto_quick" if args.quick_test else "none")
 
 
