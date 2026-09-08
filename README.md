@@ -4,6 +4,16 @@
 
 Evaluate precision, recall, F1, accuracy, inference cost, and latency across all 12 standard CUAD clause types — and get engineering recommendations on when each approach makes sense.
 
+**What it does not do:** it is an evaluation harness, not a deployed classifier — it does not serve predictions, store contracts, or ship a production model. No benchmark results have been published for this codebase yet (see [Results](#results)).
+
+**Maturity:** working prototype. The full pipeline (load → train → evaluate → report) is implemented; a comparison run has not yet been executed for this repository, so no measured numbers are published.
+
+---
+
+## Results
+
+No benchmark results are published in this repository yet. Producing them requires a full run — fine-tuning one RoBERTa model per clause type plus zero-shot LLM evaluation against a paid LLM API — and no such run has been executed for this codebase. When a real run is completed, its artifacts (`comparison_metrics.csv`, `comparison_report.md`, and the plot) will be committed alongside this README. In the meantime no figures are presented: the recommendations in [Engineering Recommendations](#-engineering-recommendations) below are qualitative, based on the cost and latency profiles of the two approaches rather than on measured results from this code.
+
 ---
 
 ## ✨ Features
