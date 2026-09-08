@@ -2,9 +2,9 @@
 
 > A side-by-side comparison of **zero-shot LLM** versus **fine-tuned transformer** models for automated contract clause classification on the [CUAD dataset](https://huggingface.co/datasets/cuad).
 
-Evaluate precision, recall, F1, accuracy, inference cost, and latency across all 12 standard CUAD clause types — and get engineering recommendations on when each approach makes sense.
+Evaluate precision, recall, F1, accuracy, inference cost, and latency across all 12 standard CUAD clause types - and get engineering recommendations on when each approach makes sense.
 
-**What it does not do:** it is an evaluation harness, not a deployed classifier — it does not serve predictions, store contracts, or ship a production model. No benchmark results have been published for this codebase yet (see [Results](#results)).
+**What it does not do:** it is an evaluation harness, not a deployed classifier - it does not serve predictions, store contracts, or ship a production model. No benchmark results have been published for this codebase yet (see [Results](#results)).
 
 **Maturity:** working prototype. The full pipeline (load → train → evaluate → report) is implemented; a comparison run has not yet been executed for this repository, so no measured numbers are published.
 
@@ -12,7 +12,7 @@ Evaluate precision, recall, F1, accuracy, inference cost, and latency across all
 
 ## Results
 
-No benchmark results are published in this repository yet. Producing them requires a full run — fine-tuning a single RoBERTa model on stacked per-clause labels plus zero-shot LLM evaluation against a paid LLM API — and no such run has been executed for this codebase. When a real run is completed, its artifacts (`comparison_metrics.csv`, `comparison_report.md`, and the plot) will be committed alongside this README. In the meantime no figures are presented: the recommendations in [Engineering Recommendations](#-engineering-recommendations) below are qualitative, based on the cost and latency profiles of the two approaches rather than on measured results from this code.
+No benchmark results are published in this repository yet. Producing them requires a full run - fine-tuning a single RoBERTa model on stacked per-clause labels plus zero-shot LLM evaluation against a paid LLM API - and no such run has been executed for this codebase. When a real run is completed, its artifacts (`comparison_metrics.csv`, `comparison_report.md`, and the plot) will be committed alongside this README. In the meantime no figures are presented: the recommendations in [Engineering Recommendations](#-engineering-recommendations) below are qualitative, based on the cost and latency profiles of the two approaches rather than on measured results from this code.
 
 ---
 
@@ -20,12 +20,12 @@ No benchmark results are published in this repository yet. Producing them requir
 
 | Feature | Description |
 | --- | --- |
-| **Interactive CLI** | Styled menu-driven interface (rich) — choose options with numbers, no flags required. Every setting configurable in the CLI. |
-| **Zero-Shot LLM Inference** | Prompt-based classification with OpenAI GPT or any LiteLLM-compatible provider — no training needed. |
+| **Interactive CLI** | Styled menu-driven interface (rich) - choose options with numbers, no flags required. Every setting configurable in the CLI. |
+| **Zero-Shot LLM Inference** | Prompt-based classification with OpenAI GPT or any LiteLLM-compatible provider - no training needed. |
 | **Fine-Tuned Transformer** | A single `roberta-base` model trained on stacked per-clause binary labels via HuggingFace `Transformers`, evaluated per clause type. |
-| **Comprehensive Benchmarks** | Precision, Recall, F1, Accuracy, cost-per-document, and latency metrics — both aggregate and per-clause-type. |
+| **Comprehensive Benchmarks** | Precision, Recall, F1, Accuracy, cost-per-document, and latency metrics - both aggregate and per-clause-type. |
 | **Automated Reporting** | Generates CSV metric tables, bar-chart visualizations, a summary memo, and a full engineering report. |
-| **CLI Configuration** | All settings (LLM provider/model/API key/temperature/tokens, training params, clause types, output path) configurable via the menu — no `.env` edits needed. |
+| **CLI Configuration** | All settings (LLM provider/model/API key/temperature/tokens, training params, clause types, output path) configurable via the menu - no `.env` edits needed. |
 | **Legacy Flags** | `--quick-test`, `--max-samples N`, `--output DIR` still work and auto-skip the menu. |
 
 ---
@@ -58,10 +58,10 @@ Choose an option [1]:
 
 | # | Action | What it does |
 |---|--------|-------------|
-| **1** | Quick test | Runs a fast evaluation (~50 samples) with zero-shot LLM only — skips training |
+| **1** | Quick test | Runs a fast evaluation (~50 samples) with zero-shot LLM only - skips training |
 | **2** | Full comparison | Downloads data, trains the fine-tuned model, evaluates both classifiers end-to-end |
 | **3** | Train only | Loads the CUAD training set and trains a new fine-tuned model (no evaluation) |
-| **4** | Evaluate only | Uses an existing model from `models/fine_tuned/` — skips training step |
+| **4** | Evaluate only | Uses an existing model from `models/fine_tuned/` - skips training step |
 | **5** | Configure settings | Opens the configuration submenu (see below) |
 | **6** | View configuration | Shows a read-only summary of all active settings |
 | **7** | Export / Import | Write current config to `.env.local` or view the environment table |
@@ -79,13 +79,13 @@ Accessed via option **5**, the configuration menu lets you change every setting:
   0. Back to main menu
 ```
 
-**LLM Settings** — Configure provider (`openai` / `anthropic` / `google` / custom), model name, API key, base URL, temperature, and max tokens.
+**LLM Settings** - Configure provider (`openai` / `anthropic` / `google` / custom), model name, API key, base URL, temperature, and max tokens.
 
-**Training Settings** — Configure training model name, epochs, batch size, learning rate, max token length, weight decay, warmup steps, eval steps, save steps.
+**Training Settings** - Configure training model name, epochs, batch size, learning rate, max token length, weight decay, warmup steps, eval steps, save steps.
 
-**Clause Types** — Interactive checker-list of active clause types plus options to add custom clause types, remove individual ones, or load all 12 CUAD defaults.
+**Clause Types** - Interactive checker-list of active clause types plus options to add custom clause types, remove individual ones, or load all 12 CUAD defaults.
 
-**Output Directory** — Change where results are saved (creates the directory if needed).
+**Output Directory** - Change where results are saved (creates the directory if needed).
 
 ### Legacy Flags (Non-Interactive Mode)
 
@@ -111,18 +111,18 @@ python compare_classifiers.py --quick-test --max-samples 50 --output ./results
 
 The classifier evaluates all 12 standard CUAD clauses:
 
-- **Agreement Effectiveness** — When the agreement becomes effective
-- **Agreement Termination** — How the agreement can be terminated
-- **Anti-Assignment** — Restrictions on transferring rights / obligations
-- **Arbitration** — Dispute resolution through arbitration
-- **Attorneys' Fees** — Payment of legal fees by the losing party
-- **Notice** — How notices must be delivered
-- **Governing Law** — Which jurisdiction's laws apply
-- **Indemnification** — Compensation for losses
-- **Jurisdiction** — Which courts have authority
-- **Severability** — Invalid provisions don't void the agreement
-- **Waiver** — Waiver of rights
-- **Warranty** — Product / service guarantees
+- **Agreement Effectiveness** - When the agreement becomes effective
+- **Agreement Termination** - How the agreement can be terminated
+- **Anti-Assignment** - Restrictions on transferring rights / obligations
+- **Arbitration** - Dispute resolution through arbitration
+- **Attorneys' Fees** - Payment of legal fees by the losing party
+- **Notice** - How notices must be delivered
+- **Governing Law** - Which jurisdiction's laws apply
+- **Indemnification** - Compensation for losses
+- **Jurisdiction** - Which courts have authority
+- **Severability** - Invalid provisions don't void the agreement
+- **Waiver** - Waiver of rights
+- **Warranty** - Product / service guarantees
 
 ---
 
@@ -136,7 +136,7 @@ pip install -r requirements.txt
 
 ### 2. (Optional) Set Environment Variables
 
-All settings are configurable via the interactive CLI menu — the `.env` file is **optional**. If you do want a persistent environment:
+All settings are configurable via the interactive CLI menu - the `.env` file is **optional**. If you do want a persistent environment:
 
 ```bash
 cp .env.example .env
@@ -205,15 +205,15 @@ Contract-clause-classifier/
 
 ### Data Flow
 
-1. **Load** — `load_cuad_dataset()` fetches from HuggingFace (`lexnecn/contract-understanding-annotated-dataset`), with a fallback to local CSV / JSON / Parquet in `data/`.
-2. **Schema** — Each document is wrapped as a `ContractData(contract_id, text, clauses_dict)`, where `clauses` maps clause type names to booleans.
-3. **Preprocess** — `preprocess_data()` creates one (text, label) row per contract per clause type for binary classification.
+1. **Load** - `load_cuad_dataset()` fetches from HuggingFace (`lexnecn/contract-understanding-annotated-dataset`), with a fallback to local CSV / JSON / Parquet in `data/`.
+2. **Schema** - Each document is wrapped as a `ContractData(contract_id, text, clauses_dict)`, where `clauses` maps clause type names to booleans.
+3. **Preprocess** - `preprocess_data()` creates one (text, label) row per contract per clause type for binary classification.
 
 ### Fine-Tuned Classifier (`utils/classifier.py`)
 
 | Aspect | Detail |
 |---|---|
-| **Model** | `AutoModelForSequenceClassification` — 2 output labels (present / absent) |
+| **Model** | `AutoModelForSequenceClassification` - 2 output labels (present / absent) |
 | **Dataset** | Custom `ClauseDataset(Dataset)` with tokenization, padding, and truncation |
 | **Training** | HuggingFace `Trainer`; one model trained on stacked per-clause labels, evaluated per clause type |
 | **Metrics** | Precision, Recall, F1, Accuracy tracked on the validation split |
@@ -245,7 +245,7 @@ All artifacts are written to the `outputs/` directory.
 | `comparison_metrics.csv` | Per-clause-type, per-method metrics in long format |
 | `comparison_plot.png` | 2×2 bar chart comparing precision / recall / F1 / accuracy |
 | `summary.md` | Concise text summary with key numbers |
-| `comparison_report.md` | Full engineering report — methodology, tables, cost analysis, recommendations |
+| `comparison_report.md` | Full engineering report - methodology, tables, cost analysis, recommendations |
 
 ---
 
@@ -263,7 +263,7 @@ All artifacts are written to the `outputs/` directory.
 | Aspect | Detail |
 |---|---|
 | **Training** | One-time GPU cost (approx. $0.001 / second of GPU time) |
-| **Inference** | Local execution — no ongoing API fees |
+| **Inference** | Local execution - no ongoing API fees |
 
 ---
 
@@ -303,4 +303,4 @@ All artifacts are written to the `outputs/` directory.
 
 ## 📄 License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
