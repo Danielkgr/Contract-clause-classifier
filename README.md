@@ -293,4 +293,4 @@ All artifacts are written to the `outputs/` directory.
 
 ## 📄 License
 
-This project is provided for educational and demonstration purposes.
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
