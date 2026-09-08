@@ -12,7 +12,7 @@ Evaluate precision, recall, F1, accuracy, inference cost, and latency across all
 
 ## Results
 
-No benchmark results are published in this repository yet. Producing them requires a full run — fine-tuning one RoBERTa model per clause type plus zero-shot LLM evaluation against a paid LLM API — and no such run has been executed for this codebase. When a real run is completed, its artifacts (`comparison_metrics.csv`, `comparison_report.md`, and the plot) will be committed alongside this README. In the meantime no figures are presented: the recommendations in [Engineering Recommendations](#-engineering-recommendations) below are qualitative, based on the cost and latency profiles of the two approaches rather than on measured results from this code.
+No benchmark results are published in this repository yet. Producing them requires a full run — fine-tuning a single RoBERTa model on stacked per-clause labels plus zero-shot LLM evaluation against a paid LLM API — and no such run has been executed for this codebase. When a real run is completed, its artifacts (`comparison_metrics.csv`, `comparison_report.md`, and the plot) will be committed alongside this README. In the meantime no figures are presented: the recommendations in [Engineering Recommendations](#-engineering-recommendations) below are qualitative, based on the cost and latency profiles of the two approaches rather than on measured results from this code.
 
 ---
 
@@ -22,7 +22,7 @@ No benchmark results are published in this repository yet. Producing them requir
 | --- | --- |
 | **Interactive CLI** | Styled menu-driven interface (rich) — choose options with numbers, no flags required. Every setting configurable in the CLI. |
 | **Zero-Shot LLM Inference** | Prompt-based classification with OpenAI GPT or any LiteLLM-compatible provider — no training needed. |
-| **Fine-Tuned Transformer** | A `roberta-base` model trained per-clause-type (one-vs-rest binary classification) via HuggingFace `Transformers`. |
+| **Fine-Tuned Transformer** | A single `roberta-base` model trained on stacked per-clause binary labels via HuggingFace `Transformers`, evaluated per clause type. |
 | **Comprehensive Benchmarks** | Precision, Recall, F1, Accuracy, cost-per-document, and latency metrics — both aggregate and per-clause-type. |
 | **Automated Reporting** | Generates CSV metric tables, bar-chart visualizations, a summary memo, and a full engineering report. |
 | **CLI Configuration** | All settings (LLM provider/model/API key/temperature/tokens, training params, clause types, output path) configurable via the menu — no `.env` edits needed. |
@@ -215,7 +215,7 @@ Contract-clause-classifier/
 |---|---|
 | **Model** | `AutoModelForSequenceClassification` — 2 output labels (present / absent) |
 | **Dataset** | Custom `ClauseDataset(Dataset)` with tokenization, padding, and truncation |
-| **Training** | HuggingFace `Trainer`; one model per clause type (one-vs-rest) |
+| **Training** | HuggingFace `Trainer`; one model trained on stacked per-clause labels, evaluated per clause type |
 | **Metrics** | Precision, Recall, F1, Accuracy tracked on the validation split |
 | **Prediction** | Batched inference with timing → predictions, probabilities, avg latency ms |
 
