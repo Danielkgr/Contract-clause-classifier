@@ -9,7 +9,8 @@ import importlib
 _EXPORTS = {
     "LLMClient": "llm_client",
     "load_cuad_dataset": "data_loader",
-    "preprocess_data": "data_loader",
+    "evaluate_zero_shot": "evaluation",
+    "evaluate_fine_tuned": "evaluation",
     "calculate_metrics": "metrics",
     "calculate_cost": "metrics",
     "calculate_latency": "metrics",

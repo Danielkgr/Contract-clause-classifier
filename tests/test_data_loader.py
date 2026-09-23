@@ -1,6 +1,7 @@
 """Tests for CUAD parsing, splitting, and clause-type validation."""
 
 import json
+import os
 
 import pytest
 
@@ -8,11 +9,11 @@ from config import CUAD_CATEGORIES, DEFAULT_CLAUSE_TYPES, DataConfig
 from utils.data_loader import SPLITS, parse_cuad_json, split_of
 
 
-def _qa(title, category, answered):
+def _qa(title, category, answered, start=0, text="clause text"):
     return {
         "id": f"{title}__{category}",
         "question": f'Highlight the parts (if any) of this contract related to "{category}"',
-        "answers": [{"text": "clause text", "answer_start": 0}] if answered else [],
+        "answers": [{"text": text, "answer_start": start}] if answered else [],
         "is_impossible": not answered,
     }
 
@@ -24,7 +25,7 @@ def _write_cuad(path, documents):
         data.append({
             "title": title,
             "paragraphs": [
-                {"context": context, "qas": [_qa(title, c, a) for c, a in answers]}
+                {"context": context, "qas": [_qa(title, *answer) for answer in answers]}
                 for context, answers in paragraphs
             ],
         })
@@ -117,3 +118,39 @@ def test_data_config_adds_and_removes_clause_types():
     assert data.clause_types[-1] == "Source Code Escrow"
     data.remove_clause_type("Source Code Escrow")
     assert "Source Code Escrow" not in data.clause_types
+
+
+def test_spans_give_character_offsets_into_the_joined_text(tmp_path):
+    title = _title_in("test")
+    first = "Recitals.  Nothing to see."
+    second = "Clause 9.  This Agreement is governed by the laws of Victoria."
+    law = "governed by the laws of Victoria"
+    path = _write_cuad(tmp_path / "cuad.json", [
+        (title, [
+            (first, [("Governing Law", False)]),
+            (second, [("Governing Law", True, second.index(law), law)]),
+        ]),
+    ])
+    [contract] = parse_cuad_json(path, "test", clause_types=["Governing Law"])
+    [(start, end)] = contract.spans["Governing Law"]
+    assert contract.text[start:end] == law
+
+
+REAL_CUAD = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "CUAD_v1.json")
+
+
+@pytest.mark.skipif(not os.path.exists(REAL_CUAD), reason="data/CUAD_v1.json not downloaded")
+def test_real_cuad_splits_and_spans():
+    sizes = {s: len(parse_cuad_json(REAL_CUAD, s, clause_types=DEFAULT_CLAUSE_TYPES)) for s in SPLITS}
+    assert sizes == {"train": 401, "validation": 53, "test": 56}
+
+    with open(REAL_CUAD) as fh:
+        answers = {
+            (d["title"], q["id"].rsplit("__", 1)[-1]): {a["text"] for a in q["answers"]}
+            for d in json.load(fh)["data"] for p in d["paragraphs"] for q in p["qas"]
+        }
+    for contract in parse_cuad_json(REAL_CUAD, "test", clause_types=DEFAULT_CLAUSE_TYPES):
+        for ct in DEFAULT_CLAUSE_TYPES:
+            assert contract.clauses[ct] == bool(contract.spans[ct])
+            for start, end in contract.spans[ct]:
+                assert contract.text[start:end] in answers[(contract.contract_id, ct)]

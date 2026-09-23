@@ -6,7 +6,7 @@ import os
 import json
 import hashlib
 from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import pandas as pd
 
@@ -25,6 +25,8 @@ class ContractData:
     text: str
     clauses: Dict[str, bool]  # clause_type -> is_present
     file_path: Optional[str] = None
+    # clause_type -> (start, end) character offsets of each answer span in text
+    spans: Dict[str, List[Tuple[int, int]]] = field(default_factory=dict)
 
 
 def load_cuad_dataset(
@@ -115,15 +117,22 @@ def parse_cuad_json(
     categories = set()
     for doc in docs:
         texts = []
+        offset = 0
         present: Dict[str, bool] = {}
+        spans: Dict[str, List[Tuple[int, int]]] = {}
         for paragraph in doc["paragraphs"]:
             texts.append(paragraph["context"])
             for qa in paragraph["qas"]:
                 category = qa["id"].rsplit("__", 1)[-1]
-                answered = bool(qa.get("answers")) and not qa.get("is_impossible", False)
-                present[category] = present.get(category, False) or answered
+                answers = [] if qa.get("is_impossible", False) else qa.get("answers", [])
+                present[category] = present.get(category, False) or bool(answers)
+                spans.setdefault(category, []).extend(
+                    (offset + a["answer_start"], offset + a["answer_start"] + len(a["text"]))
+                    for a in answers
+                )
+            offset += len(paragraph["context"]) + 1  # paragraphs are joined with "\n"
         categories.update(present)
-        parsed.append((doc["title"], "\n".join(texts), present))
+        parsed.append((doc["title"], "\n".join(texts), present, spans))
 
     if not parsed:
         return []
@@ -140,8 +149,9 @@ def parse_cuad_json(
             contract_id=title,
             text=text,
             clauses={ct: present.get(by_key[ct.casefold()], False) for ct in clause_types},
+            spans={ct: sorted(spans.get(by_key[ct.casefold()], [])) for ct in clause_types},
         )
-        for title, text, present in parsed
+        for title, text, present, spans in parsed
     ]
 
 
@@ -224,7 +234,7 @@ def parse_dataframe(df: pd.DataFrame, split: str, max_samples: Optional[int]) ->
         
         contract = ContractData(
             contract_id=str(contract_id),
-            text=str(text)[:10000],  # Limit text length
+            text=str(text),
             clauses=clauses
         )
         contracts.append(contract)
@@ -260,40 +270,6 @@ def extract_clauses_from_row(row) -> Dict[str, bool]:
             clauses[clause_type] = False
     
     return clauses
-
-
-def preprocess_data(
-    contracts: List[ContractData],
-    clause_types: Optional[List[str]] = None,
-    max_length: int = 512
-) -> Tuple[List[str], List[int]]:
-    """Preprocess contracts for classification.
-    
-    Args:
-        contracts: List of ContractData objects
-        clause_types: List of clause types to classify (None for all)
-        max_length: Maximum text length
-        
-    Returns:
-        Tuple of (texts, labels) where labels are binary (0/1)
-    """
-    if clause_types is None:
-        clause_types = config.data.clause_types
-    
-    texts = []
-    labels = []
-    
-    for contract in contracts:
-        # Truncate text if needed
-        text = contract.text[:max_length]
-        
-        for clause_type in clause_types:
-            is_present = contract.clauses.get(clause_type, False)
-            texts.append(text)
-            labels.append(1 if is_present else 0)
-    
-    logger.info(f"Preprocessed {len(texts)} samples for {len(clause_types)} clause types")
-    return texts, labels
 
 
 def get_clause_distribution(contracts: List[ContractData]) -> pd.DataFrame:

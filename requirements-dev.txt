@@ -1,3 +1,5 @@
 # The tests need only these, not torch or transformers
 pandas>=2.0.0
+scikit-learn>=1.3.0
 pytest>=8.0
+# tests/test_classifier_smoke.py also needs torch and transformers and RUN_SMOKE=1
