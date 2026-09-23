@@ -110,7 +110,7 @@ def calculate_cost(
         Cost in USD
     """
     model = model or config.llm.model
-    cost_per_million = config.llm.get_cost_per_million()
+    cost_per_million = config.llm.get_cost_per_million(model)
     
     input_cost = (input_tokens / 1_000_000) * cost_per_million[0]
     output_cost = (output_tokens / 1_000_000) * cost_per_million[1]

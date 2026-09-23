@@ -18,19 +18,22 @@ class LLMConfig:
     temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.0"))
     max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "500"))
     
-    # Cost per million tokens (input, output) in USD
-    # Source: https://openai.com/pricing
+    # List price per million tokens (input, output) in USD.
+    # Source: https://openai.com/api/pricing  Check before relying on costs.
     COSTS = {
-        "gpt-3.5-turbo": (0.0005, 0.0015),
-        "gpt-3.5-turbo-16k": (0.003, 0.004),
-        "gpt-4": (0.03, 0.06),
-        "gpt-4-turbo": (0.01, 0.03),
-        "gpt-4o": (0.005, 0.015),
+        "gpt-3.5-turbo": (0.50, 1.50),
+        "gpt-3.5-turbo-16k": (3.00, 4.00),
+        "gpt-4": (30.00, 60.00),
+        "gpt-4-turbo": (10.00, 30.00),
+        "gpt-4o": (2.50, 10.00),
+        "gpt-4o-mini": (0.15, 0.60),
     }
-    
-    def get_cost_per_million(self) -> tuple:
-        """Get cost per million tokens (input, output)."""
-        return self.COSTS.get(self.model, (0.001, 0.002))
+    # Used, with a warning, for any model not listed in COSTS
+    DEFAULT_COST_PER_MILLION = (1.00, 2.00)
+
+    def get_cost_per_million(self, model: Optional[str] = None) -> tuple:
+        """Get cost per million tokens (input, output) for a model."""
+        return self.COSTS.get(model or self.model, self.DEFAULT_COST_PER_MILLION)
 
 
 @dataclass
@@ -47,33 +50,68 @@ class TrainingConfig:
     save_steps: int = int(os.getenv("SAVE_STEPS", "1000"))
 
 
+# The 41 CUAD v1 categories, spelled as they appear in CUAD_v1.json
+CUAD_CATEGORIES = [
+    "Document Name", "Parties", "Agreement Date", "Effective Date",
+    "Expiration Date", "Renewal Term", "Notice Period To Terminate Renewal",
+    "Governing Law", "Most Favored Nation", "Non-Compete", "Exclusivity",
+    "No-Solicit Of Customers", "Competitive Restriction Exception",
+    "No-Solicit Of Employees", "Non-Disparagement", "Termination For Convenience",
+    "Rofr/Rofo/Rofn", "Change Of Control", "Anti-Assignment",
+    "Revenue/Profit Sharing", "Price Restrictions", "Minimum Commitment",
+    "Volume Restriction", "Ip Ownership Assignment", "Joint Ip Ownership",
+    "License Grant", "Non-Transferable License", "Affiliate License-Licensor",
+    "Affiliate License-Licensee", "Unlimited/All-You-Can-Eat-License",
+    "Irrevocable Or Perpetual License", "Source Code Escrow",
+    "Post-Termination Services", "Audit Rights", "Uncapped Liability",
+    "Cap On Liability", "Liquidated Damages", "Warranty Duration", "Insurance",
+    "Covenant Not To Sue", "Third Party Beneficiary",
+]
+
+# Default clause types, a mix of common and rarer CUAD categories
+DEFAULT_CLAUSE_TYPES = [
+    "Governing Law",
+    "Anti-Assignment",
+    "Cap On Liability",
+    "Uncapped Liability",
+    "Audit Rights",
+    "Termination For Convenience",
+    "Change Of Control",
+    "Exclusivity",
+    "Non-Compete",
+    "Insurance",
+    "License Grant",
+    "Warranty Duration",
+]
+
+
+def is_cuad_category(name: str) -> bool:
+    """True if name is a CUAD category, ignoring case."""
+    return name.casefold() in {c.casefold() for c in CUAD_CATEGORIES}
+
+
 @dataclass
 class DataConfig:
     """Data configuration."""
-    dataset_name: str = "cuad"  # HuggingFace dataset
-    train_split: str = "train"
-    val_split: str = "validation"
-    test_split: str = "test"
+    # CUAD v1 in SQuAD 2.0 format, from https://huggingface.co/datasets/theatticusproject/cuad
+    dataset_repo: str = "theatticusproject/cuad"
+    dataset_file: str = "CUAD_v1/CUAD_v1.json"
     max_samples: Optional[int] = None  # Set None for full dataset
     clause_types: list = None
-    
+
     def __post_init__(self):
         if self.clause_types is None:
-            # CUAD clause types
-            self.clause_types = [
-                "Agreement Effectiveness",
-                "Agreement Termination",
-                "Anti-Assignment",
-                "Arbitration",
-                "Attorneys' Fees",
-                "Notice",
-                "Governing Law",
-                "Indemnification",
-                "Jurisdiction",
-                "Severability",
-                "Waiver",
-                "Warranty",
-            ]
+            self.clause_types = list(DEFAULT_CLAUSE_TYPES)
+
+    def add_clause_type(self, name: str) -> None:
+        """Add a clause type if it is not already active."""
+        if name not in self.clause_types:
+            self.clause_types.append(name)
+
+    def remove_clause_type(self, name: str) -> None:
+        """Remove a clause type if it is active."""
+        if name in self.clause_types:
+            self.clause_types.remove(name)
 
 
 @dataclass
