@@ -31,7 +31,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 from rich.tree import Tree
 
-from config import config
+from config import config, DEFAULT_CLAUSE_TYPES, is_cuad_category
 from utils.llm_client import LLMClient
 from utils.data_loader import load_cuad_dataset, preprocess_data, get_clause_distribution
 from utils.classifier import FineTunedClassifier
@@ -244,16 +244,11 @@ def _configure_clause_types_menu():
         for i, ct in enumerate(all_types, 1):
             console.print(f"    [cyan]{i}[/]. [green]✓[/] {ct}")
 
-        # Show CUAD defaults that aren't active yet (only if list is small)
-        cuad_defaults = [
-            "Agreement Effectiveness", "Agreement Termination", "Anti-Assignment",
-            "Arbitration", "Attorneys' Fees", "Notice", "Governing Law",
-            "Indemnification", "Jurisdiction", "Severability", "Waiver", "Warranty",
-        ]
-        extra = [ct for ct in cuad_defaults if ct not in all_types]
+        # Show default clause types that aren't active yet
+        extra = [ct for ct in DEFAULT_CLAUSE_TYPES if ct not in all_types]
         if extra:
             console.print()
-            console.print("  [dim]Available CUAD defaults:[/]", style="dim")
+            console.print("  [dim]Available defaults:[/]", style="dim")
             for ct in extra:
                 console.print(f"    • {ct}")
 
@@ -261,7 +256,7 @@ def _configure_clause_types_menu():
         console.print("  [bold yellow]1[/]. Toggle active clauses")
         console.print("  [bold yellow]2[/]. Add custom clause type")
         console.print("  [bold yellow]3[/]. Remove selected clause type")
-        console.print("  [bold yellow]4[/]. Select all CUAD defaults")
+        console.print("  [bold yellow]4[/]. Select all default clause types")
         console.print("  [bold yellow]0[/]. Back to configuration menu")
 
         choice = Prompt.ask(
@@ -285,6 +280,11 @@ def _configure_clause_types_menu():
         elif choice == "2":
             new_ct = Prompt.ask("  Enter new clause type name")
             if new_ct and new_ct.strip():
+                if not is_cuad_category(new_ct.strip()):
+                    console.print(
+                        f"  [yellow]{new_ct.strip()} is not a CUAD category, so loading CUAD "
+                        f"will stop with an error until it is removed.[/]"
+                    )
                 config.data.add_clause_type(new_ct.strip())
                 all_types = list(config.data.clause_types)
 
@@ -300,7 +300,7 @@ def _configure_clause_types_menu():
             all_types = list(config.data.clause_types)
 
         elif choice == "4":
-            for ct in cuad_defaults:
+            for ct in DEFAULT_CLAUSE_TYPES:
                 config.data.add_clause_type(ct)
             all_types = list(config.data.clause_types)
 
@@ -594,17 +594,32 @@ def _eval_zero_shot(llm_client, texts_by_clause, labels_by_clause, clause_types,
         eval_texts = texts_by_clause[ct][:100] if quick_test else texts_by_clause[ct]
         eval_labels = labels_by_clause[ct][:100] if quick_test else labels_by_clause[ct]
 
-        preds, costs, latencies = [], [], []
+        preds, scored_labels, costs, latencies = [], [], [], []
+        failures = 0
         console.print(f"[cyan]  Evaluating {ct} with Zero-Shot LLM…[/]")
-        for text in eval_texts:
+        for text, label in zip(eval_texts, eval_labels):
             t0 = time.time()
             resp = llm_client.classify_single(text, ct)
             lat = (time.time() - t0) * 1000
+            if resp.error:
+                # A failed call is not a NO, so it is left out of the metrics
+                failures += 1
+                continue
             preds.append(1 if resp.text.strip().upper().startswith("YES") else 0)
+            scored_labels.append(label)
             costs.append(resp.cost_usd)
             latencies.append(lat)
 
-        m = calculate_metrics(eval_labels, preds, ct)
+        if failures:
+            console.print(
+                f"[yellow]  {failures} of {len(eval_texts)} calls failed for {ct} "
+                f"and were excluded from its metrics.[/]"
+            )
+        if not preds:
+            console.print(f"[red]  Every call failed for {ct}, so it has no zero-shot result.[/]")
+            continue
+
+        m = calculate_metrics(scored_labels, preds, ct)
         metrics[ct] = m
         stats_list.append(InferenceStats(
             total_latency_ms=sum(latencies), avg_latency_ms=np.mean(latencies),

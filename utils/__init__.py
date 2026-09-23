@@ -1,16 +1,26 @@
-"""Utility modules for Contract Clause Classifier."""
+"""Utility modules for Contract Clause Classifier.
 
-from .llm_client import LLMClient
-from .data_loader import load_cuad_dataset, preprocess_data
-from .metrics import calculate_metrics, calculate_cost, calculate_latency
-from .classifier import FineTunedClassifier
+Exports load lazily, so importing utils.data_loader or utils.llm_client does
+not pull in torch and transformers through utils.classifier.
+"""
 
-__all__ = [
-    "LLMClient",
-    "load_cuad_dataset",
-    "preprocess_data",
-    "calculate_metrics",
-    "calculate_cost",
-    "calculate_latency",
-    "FineTunedClassifier",
-]
+import importlib
+
+_EXPORTS = {
+    "LLMClient": "llm_client",
+    "load_cuad_dataset": "data_loader",
+    "preprocess_data": "data_loader",
+    "calculate_metrics": "metrics",
+    "calculate_cost": "metrics",
+    "calculate_latency": "metrics",
+    "FineTunedClassifier": "classifier",
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name):
+    if name in _EXPORTS:
+        module = importlib.import_module(f".{_EXPORTS[name]}", __name__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

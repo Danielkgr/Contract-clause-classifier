@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![12 tests](https://img.shields.io/badge/tests-12-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -39,8 +39,8 @@ Until then, the guidance in [Choosing between the two](#choosing-between-the-two
 
 | Stage | Code | What happens |
 |---|---|---|
-| **Load** | `load_cuad_dataset()` | Tries Hugging Face first, then falls back to local CSV, JSON, or Parquet files in `data/`. |
-| **Wrap** | `ContractData` | Holds each document's contract id, its text, and a map from clause type to a true or false label. |
+| **Load** | `load_cuad_dataset()` | Reads CUAD v1 (`CUAD_v1.json`) from `data/`, or downloads it from [Hugging Face](https://huggingface.co/datasets/theatticusproject/cuad).  CUAD has no splits, so each contract goes to train, validation, or test (80, 10, and 10 per cent) by a stable hash of its title.  If the download fails, it falls back to local CSV, JSON, or Parquet files in `data/`. |
+| **Wrap** | `ContractData` | Holds each contract's title, its text, and a map from clause type to present or absent.  A clause is present when CUAD has an answer span for its category. |
 | **Preprocess** | `preprocess_data()` | Makes one text and label row per contract per clause type, for binary classification. |
 | **Fine-tune** | `utils/classifier.py` | Trains one `roberta-base` model with the Hugging Face `Trainer` on stacked per-clause labels. |
 | **Zero-shot** | `utils/llm_client.py` | Asks the LLM to answer only YES or NO for each clause type, through OpenAI directly or any LiteLLM-compatible provider. |
@@ -59,7 +59,7 @@ Until then, the guidance in [Choosing between the two](#choosing-between-the-two
 
 ### The zero-shot arm
 
-The client sends a short prompt that asks the model to reply with YES or NO and nothing else.  Cost is the token count multiplied by the price table in `config.py`.
+The client sends a short prompt that asks the model to reply with YES or NO and nothing else.  A call that fails is counted and left out of the metrics, rather than scored as NO.  Cost is the token count multiplied by the per-million prices in `config.py`, which warns when a model has no price listed.
 
 ### Choosing between the two
 
@@ -83,7 +83,16 @@ pip install -r requirements.txt
 python compare_classifiers.py
 ```
 
+The first run downloads `CUAD_v1.json` (about 40 MB) from Hugging Face.  To work offline, save that file to `data/CUAD_v1.json` and the loader will use it.
+
 Option 1 in the menu is a quick test on about 50 samples that runs the zero-shot arm only, which is the cheapest way to see the pipeline work.  Every setting can be changed from the menu, so a `.env` file is optional.  To keep settings between sessions, copy `.env.example` to `.env` and fill it in.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The 12 tests cover CUAD parsing and splitting, the clause-name check, cost units, and the handling of failed calls.  They need only pandas and pytest.
 
 <br>
 
@@ -122,7 +131,7 @@ Choose an option [1]:
 |---|---|
 | **LLM settings** | Provider (`openai`, `anthropic`, `google`, or custom), model name, API key, base URL, temperature, and max tokens |
 | **Training settings** | Model name, epochs, batch size, learning rate, max token length, weight decay, warmup steps, eval steps, and save steps |
-| **Clause types** | A checklist of active clause types, with options to add a custom type, remove one, or restore the 12 defaults |
+| **Clause types** | A checklist of active clause types, with options to add another CUAD category, remove one, or restore the 12 defaults |
 | **Output directory** | Where results are saved.  The directory is created if it does not exist. |
 
 ### Flags
@@ -169,20 +178,22 @@ python compare_classifiers.py --quick-test --max-samples 50 --output ./results
 
 ### Default clause types
 
+The defaults are 12 of CUAD's 41 categories, a mix of common and rarer clauses.  Any other category can be added from the menu, spelled as it is in `CUAD_CATEGORIES` in `config.py`.  A name that is not a CUAD category stops the load with an error that lists the valid ones, rather than labelling every contract as absent.
+
 | Clause type | What it covers |
 |---|---|
-| **Agreement Effectiveness** | When the agreement takes effect |
-| **Agreement Termination** | How the agreement can be ended |
-| **Anti-Assignment** | Limits on transferring rights or obligations |
-| **Arbitration** | Dispute resolution by arbitration |
-| **Attorneys' Fees** | Payment of legal costs by the losing party |
-| **Notice** | How notices must be given |
-| **Governing Law** | Which jurisdiction's law applies |
-| **Indemnification** | Compensation for losses |
-| **Jurisdiction** | Which courts can hear a dispute |
-| **Severability** | An invalid provision does not void the rest |
-| **Waiver** | Waiver of rights |
-| **Warranty** | Guarantees about goods or services |
+| **Governing Law** | Which state or country's law governs the contract |
+| **Anti-Assignment** | Consent or notice needed before the contract can be assigned |
+| **Cap On Liability** | A cap on a party's liability for breach |
+| **Uncapped Liability** | Liability left uncapped, for all breaches or a particular kind |
+| **Audit Rights** | A right to audit the other party's books, records, or premises |
+| **Termination For Convenience** | A right to terminate without cause |
+| **Change Of Control** | Rights triggered by a change of control, merger, or asset sale |
+| **Exclusivity** | An exclusive dealing commitment with the other party |
+| **Non-Compete** | A restriction on competing with the other party |
+| **Insurance** | A requirement to maintain insurance |
+| **License Grant** | A licence granted by one party to the other |
+| **Warranty Duration** | How long a warranty lasts |
 
 ### Output artefacts
 
@@ -210,11 +221,12 @@ Every artefact is written to `outputs/`.
 |---|---|
 | **CLI** | `rich` |
 | **Machine learning** | `torch`, `transformers`, `accelerate` |
-| **Data** | `datasets`, `pandas` |
+| **Data** | `huggingface_hub`, `datasets`, `pandas` |
 | **Evaluation** | `scikit-learn`, `numpy` |
 | **LLM APIs** | `openai`, `litellm`, `tiktoken` |
 | **Charts** | `matplotlib`, `seaborn` |
 | **Utilities** | `python-dotenv`, `tqdm`, `requests` |
+| **Tests** | `pytest` |
 
 <br>
 
@@ -226,14 +238,16 @@ Contract-clause-classifier/
   config.py                  Configuration as dataclasses, read from the environment
   evaluation.ipynb           Jupyter notebook for interactive exploration
   requirements.txt           Python dependencies
+  requirements-dev.txt       Test dependencies (pandas and pytest)
   .env.example               Environment variable template (optional)
   utils/
     __init__.py              Public API exports
     llm_client.py            Zero-shot LLM client (OpenAI and LiteLLM)
-    data_loader.py           CUAD loading, from Hugging Face or local files
+    data_loader.py           CUAD loading and splitting, from data/ or Hugging Face
     classifier.py            Fine-tuned transformer (ClauseDataset, FineTunedClassifier)
     metrics.py               ClassificationMetrics, InferenceStats, aggregation helpers
-  data/                      Local dataset cache (CSV, JSON, or Parquet)
+  tests/                     Loader, splitting, cost, and failed-call tests
+  data/                      Optional local copy of CUAD_v1.json, or fallback CSV, JSON, or Parquet
   models/                    Saved fine-tuned checkpoints
   outputs/                   Results, created on the first run
 ```

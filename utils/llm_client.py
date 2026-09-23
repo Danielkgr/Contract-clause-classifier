@@ -23,6 +23,7 @@ class LLMResponse:
     output_tokens: int
     latency_ms: float
     cost_usd: float
+    error: Optional[str] = None  # set when the call failed; text is then empty
 
 
 class LLMClient:
@@ -41,6 +42,12 @@ class LLMClient:
         self.base_url = config.llm.base_url
         self.temperature = config.llm.temperature
         self.max_tokens = config.llm.max_tokens
+        
+        if self.model not in config.llm.COSTS:
+            logger.warning(
+                f"No price listed for {self.model}; costs use the default "
+                f"{config.llm.DEFAULT_COST_PER_MILLION} USD per million tokens"
+            )
         
         # Try to import litellm for unified API
         self.use_litellm = False
@@ -101,17 +108,18 @@ class LLMClient:
         end_time = time.time()
         
         # Calculate cost
-        cost_per_million = config.llm.get_cost_per_million()
-        input_cost = (response.input_tokens / 1_000_000) * cost_per_million[0]
-        output_cost = (response.output_tokens / 1_000_000) * cost_per_million[1]
+        cost_per_million = config.llm.get_cost_per_million(self.model)
+        input_cost = (response["input_tokens"] / 1_000_000) * cost_per_million[0]
+        output_cost = (response["output_tokens"] / 1_000_000) * cost_per_million[1]
         total_cost = input_cost + output_cost
         
         return LLMResponse(
-            text=response.text,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
+            text=response["text"] or "",
+            input_tokens=response["input_tokens"],
+            output_tokens=response["output_tokens"],
             latency_ms=(end_time - start_time) * 1000,
-            cost_usd=total_cost
+            cost_usd=total_cost,
+            error=response.get("error"),
         )
     
     def classify_clause_exists(self, contract_text: str, clause_type: str) -> tuple:
@@ -123,8 +131,13 @@ class LLMClient:
             
         Returns:
             Tuple of (is_present: bool, response: LLMResponse)
+            
+        Raises:
+            RuntimeError: If the LLM call failed, so a failure is never read as NO
         """
         response = self.classify_single(contract_text, clause_type)
+        if response.error:
+            raise RuntimeError(f"LLM call failed: {response.error}")
         is_present = response.text.strip().upper().startswith("YES")
         return is_present, response
     
@@ -145,7 +158,7 @@ class LLMClient:
             return {"text": text, "input_tokens": input_tokens, "output_tokens": output_tokens}
         except Exception as e:
             logger.error(f"LiteLLM error: {e}")
-            return {"text": "NO", "input_tokens": 0, "output_tokens": 0}
+            return {"text": "", "input_tokens": 0, "output_tokens": 0, "error": str(e)}
     
     def _classify_openai(self, prompt: str) -> dict:
         """Classify using OpenAI API directly."""
@@ -162,7 +175,7 @@ class LLMClient:
             return {"text": text, "input_tokens": input_tokens, "output_tokens": output_tokens}
         except Exception as e:
             logger.error(f"OpenAI error: {e}")
-            return {"text": "NO", "input_tokens": 0, "output_tokens": 0}
+            return {"text": "", "input_tokens": 0, "output_tokens": 0, "error": str(e)}
     
     def batch_classify(self, contracts: List[str], clause_type: str) -> List[LLMResponse]:
         """Batch classify multiple contracts.
@@ -184,16 +197,16 @@ class LLMClient:
 def get_clause_type_examples() -> Dict[str, str]:
     """Get brief description of each clause type for prompts."""
     return {
-        "Agreement Effectiveness": "Clause stating when the agreement becomes effective",
-        "Agreement Termination": "Clause describing how the agreement can be terminated",
-        "Anti-Assignment": "Clause restricting transfer of rights/obligations",
-        "Arbitration": "Clause requiring dispute resolution through arbitration",
-        "Attorneys' Fees": "Clause regarding payment of legal fees by losing party",
-        "Notice": "Clause specifying how notices must be delivered",
-        "Governing Law": "Clause specifying which jurisdiction's laws apply",
-        "Indemnification": "Clause regarding compensation for losses",
-        "Jurisdiction": "Clause specifying which courts have authority",
-        "Severability": "Clause stating if invalid provisions don't void agreement",
-        "Waiver": "Clause regarding waiver of rights",
-        "Warranty": "Clause regarding product/service guarantees",
+        "Governing Law": "Which state or country's law governs the contract",
+        "Anti-Assignment": "Consent or notice needed before the contract can be assigned",
+        "Cap On Liability": "A cap on a party's liability for breach",
+        "Uncapped Liability": "Liability left uncapped, for all breaches or a particular kind",
+        "Audit Rights": "A right to audit the other party's books, records, or premises",
+        "Termination For Convenience": "A right to terminate without cause",
+        "Change Of Control": "Rights triggered by a change of control, merger, or asset sale",
+        "Exclusivity": "An exclusive dealing commitment with the other party",
+        "Non-Compete": "A restriction on competing with the other party",
+        "Insurance": "A requirement to maintain insurance",
+        "License Grant": "A licence granted by one party to the other",
+        "Warranty Duration": "How long a warranty lasts",
     }

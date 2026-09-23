@@ -3,6 +3,8 @@ Data loading and preprocessing module for CUAD dataset.
 """
 
 import os
+import json
+import hashlib
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import logging
@@ -12,6 +14,8 @@ from config import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+SPLITS = ("train", "validation", "test")
 
 
 @dataclass
@@ -28,43 +32,117 @@ def load_cuad_dataset(
     split: str = "train",
     max_samples: Optional[int] = None
 ) -> List[ContractData]:
-    """Load CUAD dataset from HuggingFace or local path.
-    
+    """Load CUAD v1 from data/CUAD_v1.json or Hugging Face, or a local fallback.
+
+    CUAD ships as one SQuAD 2.0 file with no splits, so contracts are split
+    80/10/10 into train, validation, and test by a stable hash of the title.
+    A clause type counts as present when its category has an answer span.
+
     Args:
-        dataset_path: Optional local path to dataset
+        dataset_path: Optional local directory for the fallback loader
         split: Dataset split ('train', 'validation', 'test')
-        max_samples: Maximum number of samples to load
-        
+        max_samples: Maximum number of contracts to load
+
     Returns:
         List of ContractData objects
     """
+    if split not in SPLITS:
+        raise ValueError(f"split must be one of {SPLITS}, got {split!r}")
+
     try:
-        from datasets import load_dataset
-        logger.info("Loading CUAD dataset from HuggingFace...")
-        
-        # CUAD v2 is the main version
-        dataset = load_dataset("lexnecn/contract-understanding-annotated-dataset", split=split)
-        
-        if max_samples:
-            dataset = dataset.select(range(min(max_samples, len(dataset))))
-        
-        contracts = []
-        for i, row in enumerate(dataset):
-            contract = ContractData(
-                contract_id=f"cuad_{split}_{i}",
-                text=row.get("text", ""),
-                clauses=extract_clauses(row),
-                file_path=row.get("file_name", None)
-            )
-            contracts.append(contract)
-        
-        logger.info(f"Loaded {len(contracts)} contracts from {split} split")
-        return contracts
-        
+        path = _cuad_json_path()
     except Exception as e:
-        logger.error(f"Error loading from HuggingFace: {e}")
+        logger.error(f"Could not fetch CUAD from Hugging Face: {e}")
         logger.info("Attempting to load from local path...")
         return load_local_dataset(dataset_path, split, max_samples)
+
+    contracts = parse_cuad_json(path, split, max_samples)
+    logger.info(f"Loaded {len(contracts)} contracts from {split} split")
+    return contracts
+
+
+def _cuad_json_path() -> str:
+    """Return a local copy of CUAD_v1.json, downloading it if needed."""
+    local = os.path.join(config.paths.data_dir, "CUAD_v1.json")
+    if os.path.exists(local):
+        return local
+
+    from huggingface_hub import hf_hub_download
+    logger.info(f"Downloading {config.data.dataset_file} from {config.data.dataset_repo}...")
+    return hf_hub_download(
+        repo_id=config.data.dataset_repo,
+        filename=config.data.dataset_file,
+        repo_type="dataset",
+    )
+
+
+def split_of(title: str) -> str:
+    """Assign a contract to a split by a stable hash of its title."""
+    bucket = int(hashlib.sha256(title.encode("utf-8")).hexdigest(), 16) % 100
+    if bucket < 80:
+        return "train"
+    if bucket < 90:
+        return "validation"
+    return "test"
+
+
+def parse_cuad_json(
+    path: str,
+    split: str,
+    max_samples: Optional[int] = None,
+    clause_types: Optional[List[str]] = None,
+) -> List[ContractData]:
+    """Parse a CUAD SQuAD 2.0 file into ContractData for one split.
+
+    Each question id ends in "__<category>".  Clause types are matched to
+    categories ignoring case, and an unknown clause type raises ValueError
+    rather than silently labelling every contract as absent.
+    """
+    if clause_types is None:
+        clause_types = config.data.clause_types
+
+    with open(path, encoding="utf-8") as fh:
+        documents = json.load(fh)["data"]
+
+    docs = sorted(
+        (d for d in documents if split_of(d["title"]) == split),
+        key=lambda d: d["title"],
+    )
+    if max_samples:
+        docs = docs[:max_samples]
+
+    parsed = []
+    categories = set()
+    for doc in docs:
+        texts = []
+        present: Dict[str, bool] = {}
+        for paragraph in doc["paragraphs"]:
+            texts.append(paragraph["context"])
+            for qa in paragraph["qas"]:
+                category = qa["id"].rsplit("__", 1)[-1]
+                answered = bool(qa.get("answers")) and not qa.get("is_impossible", False)
+                present[category] = present.get(category, False) or answered
+        categories.update(present)
+        parsed.append((doc["title"], "\n".join(texts), present))
+
+    if not parsed:
+        return []
+
+    by_key = {c.casefold(): c for c in categories}
+    unknown = [ct for ct in clause_types if ct.casefold() not in by_key]
+    if unknown:
+        raise ValueError(
+            f"Not CUAD categories: {unknown}.  Valid categories: {sorted(categories)}"
+        )
+
+    return [
+        ContractData(
+            contract_id=title,
+            text=text,
+            clauses={ct: present.get(by_key[ct.casefold()], False) for ct in clause_types},
+        )
+        for title, text, present in parsed
+    ]
 
 
 def load_local_dataset(
@@ -153,28 +231,6 @@ def parse_dataframe(df: pd.DataFrame, split: str, max_samples: Optional[int]) ->
     
     logger.info(f"Parsed {len(contracts)} contracts from DataFrame")
     return contracts
-
-
-def extract_clauses(row) -> Dict[str, bool]:
-    """Extract clause annotations from a dataset row."""
-    clauses = {}
-    
-    # CUAD dataset typically has binary labels for each clause type
-    clause_columns = [col for col in row.index 
-                      if any(ct in col for ct in config.data.clause_types)]
-    
-    for clause_type in config.data.clause_types:
-        # Look for column with clause type in name
-        for col in row.index:
-            if clause_type.lower() in col.lower():
-                value = row[col]
-                clauses[clause_type] = bool(value) if pd.notna(value) else False
-                break
-        else:
-            # Default to False if not found
-            clauses[clause_type] = False
-    
-    return clauses
 
 
 def extract_clauses_from_row(row) -> Dict[str, bool]:
