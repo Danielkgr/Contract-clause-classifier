@@ -17,6 +17,10 @@ class LLMConfig:
     base_url: Optional[str] = os.getenv("LLM_BASE_URL")
     temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.0"))
     max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "500"))
+    # Contracts are sent in chunks that fit the model's context window.  The
+    # overlap keeps a clause that straddles a boundary whole in one chunk.
+    chunk_chars: int = int(os.getenv("LLM_CHUNK_CHARS", "24000"))
+    chunk_overlap: int = int(os.getenv("LLM_CHUNK_OVERLAP", "1000"))
     
     # List price per million tokens (input, output) in USD.
     # Source: https://openai.com/api/pricing  Check before relying on costs.
@@ -48,6 +52,17 @@ class TrainingConfig:
     warmup_steps: int = int(os.getenv("WARMUP_STEPS", "500"))
     eval_steps: int = int(os.getenv("EVAL_STEPS", "500"))
     save_steps: int = int(os.getenv("SAVE_STEPS", "1000"))
+    # Contracts are split into max_length-token windows overlapping by this many tokens
+    window_stride: int = int(os.getenv("WINDOW_STRIDE", "128"))
+    # All-negative training windows kept per window with a clause in it
+    negative_window_ratio: float = float(os.getenv("NEGATIVE_WINDOW_RATIO", "1.0"))
+    # A clause is predicted present when any window scores at least this
+    threshold: float = float(os.getenv("FT_THRESHOLD", "0.5"))
+    # USD per hour for the machine running inference.  Unset means the
+    # fine-tuned arm reports measured compute time and no cost.
+    cost_per_hour: Optional[float] = (
+        float(os.environ["FT_COST_PER_HOUR"]) if os.getenv("FT_COST_PER_HOUR") else None
+    )
 
 
 # The 41 CUAD v1 categories, spelled as they appear in CUAD_v1.json

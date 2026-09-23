@@ -54,15 +54,44 @@ class ClassificationMetrics:
 
 @dataclass
 class InferenceStats:
-    """Statistics for inference on multiple samples."""
+    """Latency and cost measured per document.
+    
+    Cost fields are None when the method has no price, which is reported as
+    not priced rather than as zero.
+    """
     total_latency_ms: float
     avg_latency_ms: float
     min_latency_ms: float
     max_latency_ms: float
-    total_cost_usd: float
-    avg_cost_usd: float
+    total_cost_usd: Optional[float]
+    avg_cost_usd: Optional[float]
     input_tokens: int
     output_tokens: int
+    documents: int = 0
+
+
+def summarise_documents(
+    latencies_ms: List[float],
+    costs_usd: Optional[List[float]] = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+) -> InferenceStats:
+    """Build InferenceStats from one measured latency (and cost) per document."""
+    if not latencies_ms:
+        return InferenceStats(0, 0, 0, 0, None if costs_usd is None else 0.0,
+                              None if costs_usd is None else 0.0,
+                              input_tokens, output_tokens, 0)
+    return InferenceStats(
+        total_latency_ms=float(sum(latencies_ms)),
+        avg_latency_ms=float(np.mean(latencies_ms)),
+        min_latency_ms=float(min(latencies_ms)),
+        max_latency_ms=float(max(latencies_ms)),
+        total_cost_usd=None if costs_usd is None else float(sum(costs_usd)),
+        avg_cost_usd=None if costs_usd is None else float(np.mean(costs_usd)),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        documents=len(latencies_ms),
+    )
 
 
 def calculate_metrics(
@@ -138,10 +167,11 @@ def calculate_latency(
         avg_latency_ms=np.mean(latencies),
         min_latency_ms=min(latencies),
         max_latency_ms=max(latencies),
-        total_cost_usd=0,  # Will be calculated separately
-        avg_cost_usd=0,
+        total_cost_usd=None,  # not priced here
+        avg_cost_usd=None,
         input_tokens=0,
-        output_tokens=0
+        output_tokens=0,
+        documents=len(latencies),
     )
 
 
