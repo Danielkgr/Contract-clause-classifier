@@ -247,7 +247,7 @@ Contract-clause-classifier/
   config.py                  Configuration as dataclasses, read from the environment
   evaluation.ipynb           Jupyter notebook for interactive exploration
   requirements.txt           Python dependencies
-  requirements-dev.txt       Test dependencies (pandas and pytest)
+  requirements-dev.txt       Test dependencies (pandas, scikit-learn, and pytest)
   .env.example               Environment variable template (optional)
   utils/
     __init__.py              Public API exports
