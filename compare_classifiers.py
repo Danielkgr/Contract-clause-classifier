@@ -30,7 +30,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 from rich.tree import Tree
 
-from config import config, DEFAULT_CLAUSE_TYPES, is_cuad_category
+from config import config, DEFAULT_CLAUSE_TYPES, is_cuad_category, mask_secret
 from utils.llm_client import LLMClient
 from utils.data_loader import load_cuad_dataset, get_clause_distribution
 from utils.classifier import FineTunedClassifier, TrainingResult
@@ -89,7 +89,7 @@ def _main_menu() -> int:
         ("Evaluate only (use existing model)", "evaluate"),
         ("Configure settings", "configure"),
         ("View configuration", "view_config"),
-        ("Export / Import settings", "export_import"),
+        ("Show settings as environment variables", "show_environment"),
         ("Exit", "exit"),
     ]
 
@@ -128,9 +128,15 @@ def _configure_llm_settings():
     model = Prompt.ask("  [cyan]2[/]. Model name", default=config.llm.model)
     config.llm.model = model
 
-    # API Key
-    api_key = Prompt.ask("  [cyan]3[/]. API key", default=config.llm.api_key or "(not set)")
-    config.llm.api_key = api_key if api_key != "(not set)" else None
+    # API key: typed without echo, never shown, and kept when left blank
+    api_key = Prompt.ask(
+        f"  [cyan]3[/]. API key, currently {mask_secret(config.llm.api_key)} (blank keeps it)",
+        password=True,
+        default="",
+        show_default=False,
+    )
+    if api_key.strip():
+        config.llm.api_key = api_key.strip()
 
     # Base URL
     base_url = Prompt.ask("  [cyan]4[/]. Base URL (optional)", default=config.llm.base_url or "(none)")
@@ -344,61 +350,34 @@ def _configure_menu():
             _configure_output_dir()
 
 
-def _export_import_menu():
-    """Export / Import settings as .env or JSON."""
-    console.print()
-    console.print(Rule("[bold]Settings[/]", style="bold cyan"))
-    console.print("  [bold yellow]1[/]. Export to .env")
-    console.print("  [bold yellow]2[/]. Show current environment (read-only)")
-    console.print("  [bold yellow]0[/]. Back")
+def _show_environment():
+    """Show the settings as environment variables, with the API key masked.
 
-    choice = Prompt.ask("Choose action", choices=["0", "1", "2"], default="0")
-    if choice == "1":
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.local")
-        with open(path, "w") as f:
-            f.write(f"LLM_PROVIDER={config.llm.provider}\n")
-            f.write(f"LLM_MODEL={config.llm.model}\n")
-            f.write(f"LLM_API_KEY={config.llm.api_key or ''}\n")
-            f.write(f"LLM_BASE_URL={config.llm.base_url or ''}\n")
-            f.write(f"LLM_TEMPERATURE={config.llm.temperature}\n")
-            f.write(f"LLM_MAX_TOKENS={config.llm.max_tokens}\n")
-            f.write(f"TRAIN_MODEL={config.training.model_name}\n")
-            f.write(f"BATCH_SIZE={config.training.batch_size}\n")
-            f.write(f"LR={config.training.learning_rate}\n")
-            f.write(f"NUM_EPOCHS={config.training.num_epochs}\n")
-            f.write(f"MAX_LENGTH={config.training.max_length}\n")
-            f.write(f"WEIGHT_DECAY={config.training.weight_decay}\n")
-            f.write(f"WARMUP_STEPS={config.training.warmup_steps}\n")
-            f.write(f"EVAL_STEPS={config.training.eval_steps}\n")
-            f.write(f"SAVE_STEPS={config.training.save_steps}\n")
-        console.print(Panel(
-            f"[green]✓ Settings exported to:[/]\n  [dim]{path}[/]",
-            border_style="green",
-        ))
-
-    elif choice == "2":
-        table = Table(title="Current Environment (would be written to .env)", show_header=True)
-        table.add_column("Variable")
-        table.add_column("Value", style="green")
-        for row in [
-            ("LLM_PROVIDER", config.llm.provider),
-            ("LLM_MODEL", config.llm.model),
-            ("LLM_API_KEY", config.llm.api_key or "(not set)"),
-            ("LLM_BASE_URL", config.llm.base_url or ""),
-            ("LLM_TEMPERATURE", str(config.llm.temperature)),
-            ("LLM_MAX_TOKENS", str(config.llm.max_tokens)),
-            ("TRAIN_MODEL", config.training.model_name),
-            ("BATCH_SIZE", str(config.training.batch_size)),
-            ("LR", str(config.training.learning_rate)),
-            ("NUM_EPOCHS", str(config.training.num_epochs)),
-            ("MAX_LENGTH", str(config.training.max_length)),
-            ("WEIGHT_DECAY", str(config.training.weight_decay)),
-            ("WARMUP_STEPS", str(config.training.warmup_steps)),
-            ("EVAL_STEPS", str(config.training.eval_steps)),
-            ("SAVE_STEPS", str(config.training.save_steps)),
-        ]:
-            table.add_row(*row)
-        console.print(table)
+    Settings are never written to disk from here, so the key cannot end up
+    in a file that might be committed.  Put settings in .env instead.
+    """
+    table = Table(title="Current settings as environment variables", show_header=True)
+    table.add_column("Variable")
+    table.add_column("Value", style="green")
+    for row in [
+        ("LLM_PROVIDER", config.llm.provider),
+        ("LLM_MODEL", config.llm.model),
+        ("LLM_API_KEY", mask_secret(config.llm.api_key)),
+        ("LLM_BASE_URL", config.llm.base_url or ""),
+        ("LLM_TEMPERATURE", str(config.llm.temperature)),
+        ("LLM_MAX_TOKENS", str(config.llm.max_tokens)),
+        ("TRAIN_MODEL", config.training.model_name),
+        ("BATCH_SIZE", str(config.training.batch_size)),
+        ("LR", str(config.training.learning_rate)),
+        ("NUM_EPOCHS", str(config.training.num_epochs)),
+        ("MAX_LENGTH", str(config.training.max_length)),
+        ("WEIGHT_DECAY", str(config.training.weight_decay)),
+        ("WARMUP_STEPS", str(config.training.warmup_steps)),
+        ("EVAL_STEPS", str(config.training.eval_steps)),
+        ("SAVE_STEPS", str(config.training.save_steps)),
+    ]:
+        table.add_row(*row)
+    console.print(table)
 
 
 # ----------------------------------------------------------------------- #
@@ -414,7 +393,7 @@ def _view_config():
     rows = [
         ("LLM", "Provider", config.llm.provider),
         ("LLM", "Model", config.llm.model),
-        ("LLM", "API Key", (config.llm.api_key or "(not set)")[:32] + ("…" if len(config.llm.api_key or "") > 32 else "")),
+        ("LLM", "API Key", mask_secret(config.llm.api_key)),
         ("LLM", "Base URL", config.llm.base_url or "(none)"),
         ("LLM", "Temperature", str(config.llm.temperature)),
         ("LLM", "Max Tokens", str(config.llm.max_tokens)),
@@ -861,7 +840,7 @@ def main():
             _view_config()
 
         elif choice == 7:
-            _export_import_menu()
+            _show_environment()
 
         elif choice == 8:
             console.print("[bold yellow]Goodbye![/]")

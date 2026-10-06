@@ -19,8 +19,11 @@ ENV/
 # Jupyter
 .ipynb_checkpoints/
 
-# Environment
+# Environment files hold API keys and must never be committed
 .env
+.env.local
+.env.*
+!.env.example
 
 # IDE
 .vscode/

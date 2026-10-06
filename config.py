@@ -105,6 +105,19 @@ def is_cuad_category(name: str) -> bool:
     return name.casefold() in {c.casefold() for c in CUAD_CATEGORIES}
 
 
+def mask_secret(value: Optional[str]) -> str:
+    """Show a secret such as an API key without revealing it.
+
+    At most the last four characters are shown, and none of a value shorter
+    than 16 characters, so the result is safe to print or log.
+    """
+    if not value:
+        return "(not set)"
+    if len(value) < 16:
+        return "****"
+    return "..." + value[-4:]
+
+
 @dataclass
 class DataConfig:
     """Data configuration."""

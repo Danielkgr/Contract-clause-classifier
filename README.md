@@ -114,7 +114,7 @@ The 27 tests cover CUAD parsing, splitting, and answer spans, chunking and windo
   4. Evaluate only (use existing model)
   5. Configure settings
   6. View configuration
-  7. Export / Import settings
+  7. Show settings as environment variables
   8. Exit
 
 Choose an option [1]:
@@ -128,7 +128,7 @@ Choose an option [1]:
 | **4** | Evaluate only | Evaluates the LLM and the saved model in `models/fine_tuned/`, without training |
 | **5** | Configure settings | Opens the configuration menu described below |
 | **6** | View configuration | Shows every active setting, read only |
-| **7** | Export or import | Writes the current configuration to `.env.local`, or shows the environment table |
+| **7** | Show settings | Shows the settings as environment variables, with the API key masked.  Nothing is written to disk. |
 | **8** | Exit | Leaves the program |
 
 ### Configuration menu
