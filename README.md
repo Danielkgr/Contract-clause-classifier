@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![28 tests](https://img.shields.io/badge/tests-28-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![37 tests](https://img.shields.io/badge/tests-37-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -91,14 +91,14 @@ python compare_classifiers.py
 
 The first run downloads `CUAD_v1.json` (about 40 MB) from Hugging Face.  To work offline, save that file to `data/CUAD_v1.json` and the loader will use it.
 
-Option 1 in the menu is a quick test that asks the LLM about 5 test contracts, and adds the fine-tuned model only if one has already been saved.  It is the cheapest way to see the pipeline work.  Every setting can be changed from the menu, so a `.env` file is optional.  To keep settings between sessions, copy `.env.example` to `.env` and fill it in.
+Option 1 in the menu is a quick test that asks the LLM about 5 test contracts, and adds the fine-tuned model only if one has already been saved.  It is the cheapest way to see the pipeline work.  Every setting can be changed from the menu, so a `.env` file is optional.  To keep settings between sessions, copy `.env.example` to `.env` and fill it in.  The file is read once at startup, and a variable already set in the shell takes precedence over it.
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
 
-The 27 tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms with stand-in models, cost units, and the handling of failed calls.  They need only pandas, scikit-learn, and pytest.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  A 28th test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
+The 36 tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms with stand-in models, cost units, the handling of failed calls, loading settings from `.env`, and masking the API key.  They need only pandas, scikit-learn, python-dotenv, and pytest.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  A 37th test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
 
 <br>
 
@@ -247,7 +247,7 @@ Contract-clause-classifier/
   config.py                  Configuration as dataclasses, read from the environment
   evaluation.ipynb           Jupyter notebook for interactive exploration
   requirements.txt           Python dependencies
-  requirements-dev.txt       Test dependencies (pandas, scikit-learn, and pytest)
+  requirements-dev.txt       Test dependencies (pandas, scikit-learn, python-dotenv, and pytest)
   .env.example               Environment variable template (optional)
   utils/
     __init__.py              Public API exports
