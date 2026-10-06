@@ -1,5 +1,11 @@
 # The tests need only these, not torch or transformers
+anthropic>=1.11,<2
+httpx2>=2.0  # the tests mock both SDKs' HTTP layer with it
+matplotlib>=3.7.0
+openai>=3.24,<4
 pandas>=2.0.0
+python-dotenv>=1.0.0
 scikit-learn>=1.3.0
 pytest>=8.0
+ruff==0.16.10  # pinned so local and CI formatting agree
 # tests/test_classifier_smoke.py also needs torch and transformers and RUN_SMOKE=1

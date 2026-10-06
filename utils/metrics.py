@@ -1,21 +1,17 @@
 """
-Metrics calculation module for evaluating clause classifiers.
+Metrics for evaluating clause classifiers.
 """
 
-from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
-import numpy as np
-from sklearn.metrics import (
-    precision_score, recall_score, f1_score, accuracy_score,
-    classification_report, confusion_matrix
-)
 
-from config import config
+import numpy as np
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 
 @dataclass
 class ClassificationMetrics:
     """Classification metrics for a single clause type."""
+
     precision: float
     recall: float
     f1: float
@@ -24,238 +20,81 @@ class ClassificationMetrics:
     false_positives: int
     true_negatives: int
     false_negatives: int
-    
+
     @classmethod
-    def from_predictions(
-        cls, y_true: List[int], y_pred: List[int]
-    ) -> "ClassificationMetrics":
+    def from_predictions(cls, y_true: list[int], y_pred: list[int]) -> "ClassificationMetrics":
         """Calculate metrics from true and predicted labels."""
-        tp = sum(1 for yt, yp in zip(y_true, y_pred) if yt == 1 and yp == 1)
-        fp = sum(1 for yt, yp in zip(y_true, y_pred) if yt == 0 and yp == 1)
-        tn = sum(1 for yt, yp in zip(y_true, y_pred) if yt == 0 and yp == 0)
-        fn = sum(1 for yt, yp in zip(y_true, y_pred) if yt == 1 and yp == 0)
-        
-        precision = precision_score(y_true, y_pred, zero_division=0)
-        recall = recall_score(y_true, y_pred, zero_division=0)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-        accuracy = accuracy_score(y_true, y_pred)
-        
+        pairs = list(zip(y_true, y_pred, strict=True))
         return cls(
-            precision=precision,
-            recall=recall,
-            f1=f1,
-            accuracy=accuracy,
-            true_positives=tp,
-            false_positives=fp,
-            true_negatives=tn,
-            false_negatives=fn
+            precision=precision_score(y_true, y_pred, zero_division=0),
+            recall=recall_score(y_true, y_pred, zero_division=0),
+            f1=f1_score(y_true, y_pred, zero_division=0),
+            accuracy=accuracy_score(y_true, y_pred),
+            true_positives=sum(1 for t, p in pairs if t == 1 and p == 1),
+            false_positives=sum(1 for t, p in pairs if t == 0 and p == 1),
+            true_negatives=sum(1 for t, p in pairs if t == 0 and p == 0),
+            false_negatives=sum(1 for t, p in pairs if t == 1 and p == 0),
         )
 
 
 @dataclass
 class InferenceStats:
     """Latency and cost measured per document.
-    
+
     Cost fields are None when the method has no price, which is reported as
     not priced rather than as zero.
     """
+
     total_latency_ms: float
     avg_latency_ms: float
     min_latency_ms: float
     max_latency_ms: float
-    total_cost_usd: Optional[float]
-    avg_cost_usd: Optional[float]
+    total_cost_usd: float | None
+    avg_cost_usd: float | None
     input_tokens: int
     output_tokens: int
     documents: int = 0
 
 
 def summarise_documents(
-    latencies_ms: List[float],
-    costs_usd: Optional[List[float]] = None,
+    latencies_ms: list[float],
+    costs_usd: list[float] | None = None,
     input_tokens: int = 0,
     output_tokens: int = 0,
 ) -> InferenceStats:
-    """Build InferenceStats from one measured latency (and cost) per document."""
+    """Build InferenceStats from one measured latency, and cost, per document."""
+    priced = costs_usd is not None
     if not latencies_ms:
-        return InferenceStats(0, 0, 0, 0, None if costs_usd is None else 0.0,
-                              None if costs_usd is None else 0.0,
-                              input_tokens, output_tokens, 0)
+        zero = 0.0 if priced else None
+        return InferenceStats(0, 0, 0, 0, zero, zero, input_tokens, output_tokens, 0)
     return InferenceStats(
         total_latency_ms=float(sum(latencies_ms)),
         avg_latency_ms=float(np.mean(latencies_ms)),
         min_latency_ms=float(min(latencies_ms)),
         max_latency_ms=float(max(latencies_ms)),
-        total_cost_usd=None if costs_usd is None else float(sum(costs_usd)),
-        avg_cost_usd=None if costs_usd is None else float(np.mean(costs_usd)),
+        total_cost_usd=float(sum(costs_usd)) if priced else None,
+        avg_cost_usd=float(np.mean(costs_usd)) if priced else None,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         documents=len(latencies_ms),
     )
 
 
-def calculate_metrics(
-    y_true: List[int],
-    y_pred: List[int],
-    clause_type: Optional[str] = None
-) -> ClassificationMetrics:
-    """Calculate classification metrics.
-    
-    Args:
-        y_true: Ground truth labels (0 or 1)
-        y_pred: Predicted labels (0 or 1)
-        clause_type: Optional clause type name for logging
-        
-    Returns:
-        ClassificationMetrics object
-    """
-    metrics = ClassificationMetrics.from_predictions(y_true, y_pred)
-    
-    if clause_type:
-        print(f"\n{clause_type}:")
-        print(f"  Precision: {metrics.precision:.4f}")
-        print(f"  Recall: {metrics.recall:.4f}")
-        print(f"  F1 Score: {metrics.f1:.4f}")
-        print(f"  Accuracy: {metrics.accuracy:.4f}")
-        print(f"  TP: {metrics.true_positives}, FP: {metrics.false_positives}")
-        print(f"  TN: {metrics.true_negatives}, FN: {metrics.false_negatives}")
-    
-    return metrics
+def calculate_metrics(y_true: list[int], y_pred: list[int]) -> ClassificationMetrics:
+    """Precision, recall, F1, accuracy, and confusion counts for one clause type."""
+    return ClassificationMetrics.from_predictions(y_true, y_pred)
 
 
-def calculate_cost(
-    input_tokens: int,
-    output_tokens: int,
-    model: Optional[str] = None
-) -> float:
-    """Calculate API cost for LLM inference.
-    
-    Args:
-        input_tokens: Number of input tokens
-        output_tokens: Number of output tokens
-        model: Model name (uses config if None)
-        
-    Returns:
-        Cost in USD
-    """
-    model = model or config.llm.model
-    cost_per_million = config.llm.get_cost_per_million(model)
-    
-    input_cost = (input_tokens / 1_000_000) * cost_per_million[0]
-    output_cost = (output_tokens / 1_000_000) * cost_per_million[1]
-    
-    return input_cost + output_cost
-
-
-def calculate_latency(
-    start_times: List[float],
-    end_times: List[float]
-) -> InferenceStats:
-    """Calculate latency statistics.
-    
-    Args:
-        start_times: List of start timestamps
-        end_times: List of end timestamps
-        
-    Returns:
-        InferenceStats object
-    """
-    latencies = [(e - s) * 1000 for s, e in zip(start_times, end_times)]
-    
-    return InferenceStats(
-        total_latency_ms=sum(latencies),
-        avg_latency_ms=np.mean(latencies),
-        min_latency_ms=min(latencies),
-        max_latency_ms=max(latencies),
-        total_cost_usd=None,  # not priced here
-        avg_cost_usd=None,
-        input_tokens=0,
-        output_tokens=0,
-        documents=len(latencies),
-    )
-
-
-def aggregate_metrics(
-    all_metrics: Dict[str, ClassificationMetrics]
-) -> Dict[str, float]:
-    """Aggregate metrics across all clause types.
-    
-    Args:
-        all_metrics: Dict mapping clause type to metrics
-        
-    Returns:
-        Dict with aggregate metrics
-    """
+def aggregate_metrics(all_metrics: dict[str, ClassificationMetrics]) -> dict[str, float]:
+    """Mean of each metric across clause types, with the lowest and highest precision."""
     if not all_metrics:
         return {}
-    
-    metrics_list = list(all_metrics.values())
-    
+    metrics = list(all_metrics.values())
     return {
-        "avg_precision": np.mean([m.precision for m in metrics_list]),
-        "avg_recall": np.mean([m.recall for m in metrics_list]),
-        "avg_f1": np.mean([m.f1 for m in metrics_list]),
-        "avg_accuracy": np.mean([m.accuracy for m in metrics_list]),
-        "min_precision": min([m.precision for m in metrics_list]),
-        "max_precision": max([m.precision for m in metrics_list]),
+        "avg_precision": float(np.mean([m.precision for m in metrics])),
+        "avg_recall": float(np.mean([m.recall for m in metrics])),
+        "avg_f1": float(np.mean([m.f1 for m in metrics])),
+        "avg_accuracy": float(np.mean([m.accuracy for m in metrics])),
+        "min_precision": min(m.precision for m in metrics),
+        "max_precision": max(m.precision for m in metrics),
     }
-
-
-def get_classification_report(
-    y_true: List[int],
-    y_pred: List[int],
-    clause_type: str
-) -> str:
-    """Generate a classification report string.
-    
-    Args:
-        y_true: Ground truth labels
-        y_pred: Predicted labels
-        clause_type: Clause type name
-        
-    Returns:
-        Formatted report string
-    """
-    return classification_report(
-        y_true, y_pred,
-        target_names=[f"No {clause_type}", f"{clause_type}"],
-        digits=4
-    )
-
-
-def print_comparison_table(
-    zero_shot_metrics: Dict[str, ClassificationMetrics],
-    fine_tuned_metrics: Dict[str, ClassificationMetrics]
-):
-    """Print a comparison table between two classifiers.
-    
-    Args:
-        zero_shot_metrics: Metrics for zero-shot LLM
-        fine_tuned_metrics: Metrics for fine-tuned model
-    """
-    print("\n" + "=" * 80)
-    print("CLASSIFIER COMPARISON")
-    print("=" * 80)
-    
-    clause_types = list(zero_shot_metrics.keys())
-    if not clause_types:
-        clause_types = list(fine_tuned_metrics.keys())
-    
-    # Header
-    print(f"{'Clause Type':<25} {'Method':<15} {'Precision':>10} {'Recall':>10} {'F1':>10} {'Acc':>10}")
-    print("-" * 80)
-    
-    # Data rows
-    for clause_type in clause_types:
-        zs = zero_shot_metrics.get(clause_type)
-        ft = fine_tuned_metrics.get(clause_type)
-        
-        if zs:
-            print(f"{clause_type:<25} {'Zero-Shot':<15} "
-                  f"{zs.precision:>10.4f} {zs.recall:>10.4f} {zs.f1:>10.4f} {zs.accuracy:>10.4f}")
-        
-        if ft:
-            print(f"{clause_type:<25} {'Fine-Tuned':<15} "
-                  f"{ft.precision:>10.4f} {ft.recall:>10.4f} {ft.f1:>10.4f} {ft.accuracy:>10.4f}")
-    
-    print("=" * 80)

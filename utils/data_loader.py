@@ -2,17 +2,16 @@
 Data loading and preprocessing module for CUAD dataset.
 """
 
-import os
-import json
 import hashlib
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass, field
+import json
 import logging
+import os
+from dataclasses import dataclass, field
+
 import pandas as pd
 
 from config import config
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SPLITS = ("train", "validation", "test")
@@ -21,61 +20,76 @@ SPLITS = ("train", "validation", "test")
 @dataclass
 class ContractData:
     """Single contract with clauses."""
+
     contract_id: str
     text: str
-    clauses: Dict[str, bool]  # clause_type -> is_present
-    file_path: Optional[str] = None
+    clauses: dict[str, bool]  # clause_type -> is_present
+    file_path: str | None = None
     # clause_type -> (start, end) character offsets of each answer span in text
-    spans: Dict[str, List[Tuple[int, int]]] = field(default_factory=dict)
+    spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
 
 
 def load_cuad_dataset(
-    dataset_path: Optional[str] = None,
     split: str = "train",
-    max_samples: Optional[int] = None
-) -> List[ContractData]:
-    """Load CUAD v1 from data/CUAD_v1.json or Hugging Face, or a local fallback.
+    max_samples: int | None = None,
+    path: str | None = None,
+    clause_types: list[str] | None = None,
+) -> list[ContractData]:
+    """Load one split of CUAD v1.
 
     CUAD ships as one SQuAD 2.0 file with no splits, so contracts are split
     80/10/10 into train, validation, and test by a stable hash of the title.
     A clause type counts as present when its category has an answer span.
 
     Args:
-        dataset_path: Optional local directory for the fallback loader
         split: Dataset split ('train', 'validation', 'test')
         max_samples: Maximum number of contracts to load
+        path: A CUAD_v1.json to read instead of the usual places
+        clause_types: Clause types to label, by default the configured ones
 
-    Returns:
-        List of ContractData objects
+    Raises:
+        FileNotFoundError: when CUAD cannot be found or downloaded, saying
+            where to put the file
     """
     if split not in SPLITS:
         raise ValueError(f"split must be one of {SPLITS}, got {split!r}")
 
-    try:
-        path = _cuad_json_path()
-    except Exception as e:
-        logger.error(f"Could not fetch CUAD from Hugging Face: {e}")
-        logger.info("Attempting to load from local path...")
-        return load_local_dataset(dataset_path, split, max_samples)
-
-    contracts = parse_cuad_json(path, split, max_samples)
+    contracts = parse_cuad_json(cuad_json_path(path), split, max_samples, clause_types)
     logger.info(f"Loaded {len(contracts)} contracts from {split} split")
     return contracts
 
 
-def _cuad_json_path() -> str:
-    """Return a local copy of CUAD_v1.json, downloading it if needed."""
+def cuad_json_path(path: str | None = None) -> str:
+    """Find CUAD_v1.json: path, then CUAD_PATH, then data/, then a Hugging Face download.
+
+    A path given explicitly, or through CUAD_PATH, must exist.  Nothing falls
+    back to another dataset, because only the CUAD file carries the answer
+    spans that fine-tuning needs.
+    """
+    explicit = path or config.data.cuad_path
+    if explicit:
+        if os.path.exists(explicit):
+            return explicit
+        raise FileNotFoundError(f"No CUAD file at {explicit}")
+
     local = os.path.join(config.paths.data_dir, "CUAD_v1.json")
     if os.path.exists(local):
         return local
 
-    from huggingface_hub import hf_hub_download
     logger.info(f"Downloading {config.data.dataset_file} from {config.data.dataset_repo}...")
-    return hf_hub_download(
-        repo_id=config.data.dataset_repo,
-        filename=config.data.dataset_file,
-        repo_type="dataset",
-    )
+    try:
+        from huggingface_hub import hf_hub_download
+
+        return hf_hub_download(
+            repo_id=config.data.dataset_repo,
+            filename=config.data.dataset_file,
+            repo_type="dataset",
+        )
+    except Exception as exc:  # any import, network, or hub failure gets the same advice
+        raise FileNotFoundError(
+            "Could not find or download CUAD.  Save CUAD_v1.json to data/CUAD_v1.json, "
+            f"set CUAD_PATH, or pass --cuad PATH.  The download failed with: {exc}"
+        ) from exc
 
 
 def split_of(title: str) -> str:
@@ -91,9 +105,9 @@ def split_of(title: str) -> str:
 def parse_cuad_json(
     path: str,
     split: str,
-    max_samples: Optional[int] = None,
-    clause_types: Optional[List[str]] = None,
-) -> List[ContractData]:
+    max_samples: int | None = None,
+    clause_types: list[str] | None = None,
+) -> list[ContractData]:
     """Parse a CUAD SQuAD 2.0 file into ContractData for one split.
 
     Each question id ends in "__<category>".  Clause types are matched to
@@ -118,8 +132,8 @@ def parse_cuad_json(
     for doc in docs:
         texts = []
         offset = 0
-        present: Dict[str, bool] = {}
-        spans: Dict[str, List[Tuple[int, int]]] = {}
+        present: dict[str, bool] = {}
+        spans: dict[str, list[tuple[int, int]]] = {}
         for paragraph in doc["paragraphs"]:
             texts.append(paragraph["context"])
             for qa in paragraph["qas"]:
@@ -140,9 +154,7 @@ def parse_cuad_json(
     by_key = {c.casefold(): c for c in categories}
     unknown = [ct for ct in clause_types if ct.casefold() not in by_key]
     if unknown:
-        raise ValueError(
-            f"Not CUAD categories: {unknown}.  Valid categories: {sorted(categories)}"
-        )
+        raise ValueError(f"Not CUAD categories: {unknown}.  Valid categories: {sorted(categories)}")
 
     return [
         ContractData(
@@ -155,134 +167,17 @@ def parse_cuad_json(
     ]
 
 
-def load_local_dataset(
-    data_dir: Optional[str] = None,
-    split: str = "train",
-    max_samples: Optional[int] = None
-) -> List[ContractData]:
-    """Load CUAD dataset from local directory.
-    
-    Args:
-        data_dir: Path to local dataset directory
-        split: Dataset split
-        max_samples: Maximum number of samples
-        
-    Returns:
-        List of ContractData objects
-    """
-    if data_dir is None:
-        data_dir = config.paths.data_dir
-    
-    # Check for various CUAD file formats
-    csv_path = os.path.join(data_dir, f"{split}.csv")
-    json_path = os.path.join(data_dir, f"{split}.json")
-    
-    if os.path.exists(csv_path):
-        df = pd.read_csv(csv_path)
-        return parse_dataframe(df, split, max_samples)
-    elif os.path.exists(json_path):
-        df = pd.read_json(json_path)
-        return parse_dataframe(df, split, max_samples)
-    else:
-        # Look for any data files
-        data_files = [f for f in os.listdir(data_dir) 
-                      if f.endswith(('.csv', '.json', '.parquet'))]
-        if data_files:
-            logger.info(f"Found data files: {data_files}")
-            # Try first file
-            first_file = os.path.join(data_dir, data_files[0])
-            if first_file.endswith('.csv'):
-                df = pd.read_csv(first_file)
-            elif first_file.endswith('.json'):
-                df = pd.read_json(first_file)
-            elif first_file.endswith('.parquet'):
-                df = pd.read_parquet(first_file)
-            return parse_dataframe(df, split, max_samples)
-    
-    logger.error("No valid data files found")
-    return []
-
-
-def parse_dataframe(df: pd.DataFrame, split: str, max_samples: Optional[int]) -> List[ContractData]:
-    """Parse DataFrame into ContractData objects."""
-    if max_samples:
-        df = df.head(max_samples)
-    
-    contracts = []
-    for i, row in df.iterrows():
-        # Extract text - try various column names
-        text = None
-        for col in ['text', 'contract_text', 'content', 'document', 'full_text']:
-            if col in df.columns:
-                text = row[col]
-                break
-        
-        if text is None:
-            # Combine text columns if available
-            text_parts = []
-            for col in df.columns:
-                if 'text' in col.lower() or 'content' in col.lower():
-                    text_parts.append(str(row[col]))
-            text = " ".join(text_parts)
-        
-        # Extract clause information
-        clauses = extract_clauses_from_row(row)
-        
-        contract_id = row.get('contract_id', f"local_{split}_{i}")
-        if isinstance(contract_id, float) and pd.isna(contract_id):
-            contract_id = f"local_{split}_{i}"
-        
-        contract = ContractData(
-            contract_id=str(contract_id),
-            text=str(text),
-            clauses=clauses
-        )
-        contracts.append(contract)
-    
-    logger.info(f"Parsed {len(contracts)} contracts from DataFrame")
-    return contracts
-
-
-def extract_clauses_from_row(row) -> Dict[str, bool]:
-    """Alternative clause extraction from row."""
-    clauses = {}
-    
-    for clause_type in config.data.clause_types:
-        # Try different naming conventions
-        possible_names = [
-            clause_type.lower().replace(" ", "_"),
-            clause_type.lower().replace(" ", ""),
-            clause_type.replace(" ", "_").lower(),
-            clause_type.lower(),
-        ]
-        
-        for name in possible_names:
-            # Look for exact match or partial match
-            for col in row.index:
-                if name in col.lower():
-                    value = row[col]
-                    clauses[clause_type] = bool(value) if pd.notna(value) else False
-                    break
-            else:
-                continue
-            break
-        else:
-            clauses[clause_type] = False
-    
-    return clauses
-
-
-def get_clause_distribution(contracts: List[ContractData]) -> pd.DataFrame:
+def get_clause_distribution(contracts: list[ContractData]) -> pd.DataFrame:
     """Get distribution of clause types across contracts.
-    
+
     Args:
         contracts: List of ContractData objects
-        
+
     Returns:
         DataFrame with clause type distribution
     """
     distribution = {}
-    
+
     for contract in contracts:
         for clause_type, is_present in contract.clauses.items():
             if clause_type not in distribution:
@@ -291,9 +186,9 @@ def get_clause_distribution(contracts: List[ContractData]) -> pd.DataFrame:
                 distribution[clause_type]["present"] += 1
             else:
                 distribution[clause_type]["absent"] += 1
-    
+
     df = pd.DataFrame(distribution).T
     df["total"] = df["present"] + df["absent"]
     df["presence_rate"] = df["present"] / df["total"]
-    
+
     return df.sort_values("presence_rate", ascending=False)

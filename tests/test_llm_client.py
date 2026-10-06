@@ -1,47 +1,72 @@
-"""Tests for LLM response handling and cost units."""
+"""Tests for the provider switch and the provider-neutral reading of answers."""
 
 import pytest
 
-from config import config
-from utils.llm_client import LLMClient
+from config import LLMConfig
+from utils.llm_client import (
+    Completion,
+    LLMCallError,
+    LLMClient,
+    Usage,
+    make_client,
+)
+
+TYPES = ["Governing Law", "Insurance"]
 
 
-def _client(monkeypatch, result):
-    client = LLMClient(provider="openai", model="gpt-3.5-turbo")
-    monkeypatch.setattr(client, "use_litellm", False)
-    monkeypatch.setattr(client, "_classify_openai", lambda prompt: result)
-    return client
+class FixedClient(LLMClient):
+    """Returns one canned completion, or raises one error."""
+
+    provider = "fixed"
+
+    def __init__(self, completion=None, error=None, model="claude-opus-5-5"):
+        super().__init__(model, max_tokens=100)
+        self.completion, self.error = completion, error
+
+    def send(self, excerpt, clause_types):
+        if self.error:
+            raise self.error
+        return self.completion
 
 
-def test_prices_are_per_million_tokens():
-    # Per-thousand prices would all sit below 0.1
-    for model, (inp, out) in config.llm.COSTS.items():
-        assert inp >= 0.1 and out >= inp, model
+def test_the_default_provider_is_claude_opus():
+    client = make_client(LLMConfig(api_key="test"))
+    assert (client.provider, client.model) == ("anthropic", "claude-opus-5-5")
 
 
-def test_cost_uses_prices_per_million(monkeypatch):
-    client = _client(monkeypatch, {"text": "YES", "input_tokens": 1_000_000, "output_tokens": 0})
-    response = client.classify_single("contract", "Governing Law")
-    assert response.text == "YES"
-    assert response.error is None
-    assert response.cost_usd == pytest.approx(0.50)
+def test_claude_models_are_selected_by_name():
+    client = make_client(LLMConfig(model="claude-haiku-4-5", api_key="test"))
+    assert client.model == "claude-haiku-4-5"
 
 
-def test_failed_call_is_flagged_not_read_as_no(monkeypatch):
-    client = _client(
-        monkeypatch,
-        {"text": "", "input_tokens": 0, "output_tokens": 0, "error": "timeout"},
-    )
-    response = client.classify_single("contract", "Governing Law")
-    assert response.error == "timeout"
-    with pytest.raises(RuntimeError, match="timeout"):
-        client.classify_clause_exists("contract", "Governing Law")
+def test_the_openai_path_is_kept_for_comparison():
+    client = make_client(LLMConfig(provider="openai", api_key="test"))
+    assert (client.provider, client.model) == ("openai", "gpt-4o-mini")
 
 
-def test_provider_exception_becomes_an_error(monkeypatch):
-    client = LLMClient(provider="openai", model="gpt-3.5-turbo")
-    monkeypatch.setattr(client, "use_litellm", False)
-    monkeypatch.setattr(client, "openai_client", None, raising=False)
-    response = client.classify_single("contract", "Governing Law")
-    assert response.error
-    assert response.text == ""
+def test_an_unknown_provider_is_refused():
+    with pytest.raises(ValueError, match="LLM_PROVIDER"):
+        make_client(LLMConfig(provider="litellm"))
+
+
+def test_an_unexpected_stop_reason_is_a_failed_call():
+    completion = Completion("", "tool_use", Usage(10, 5), latency_ms=3.0)
+    response = FixedClient(completion).classify("text", TYPES)
+    assert response.present is None
+    assert response.outcome == "error"
+
+
+def test_a_failed_call_records_its_time_and_costs_nothing():
+    response = FixedClient(error=LLMCallError("request rejected with 400")).classify("text", TYPES)
+    assert response.present is None
+    assert response.outcome == "error"
+    assert response.latency_ms >= 0
+    assert response.cost_usd == 0.0
+
+
+def test_an_unpriced_model_reports_no_cost(caplog):
+    completion = Completion('{"present": []}', "end_turn", Usage(10, 5), latency_ms=3.0)
+    response = FixedClient(completion, model="local-model").classify("text", TYPES)
+    assert response.present == frozenset()
+    assert response.cost_usd is None
+    assert "No listed price for local-model" in caplog.text

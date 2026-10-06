@@ -10,16 +10,21 @@ import pytest
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_SMOKE") != "1", reason="set RUN_SMOKE=1 to run")
 
-TINY_MODEL = os.getenv("SMOKE_MODEL", "hf-internal-testing/tiny-random-RobertaForSequenceClassification")
+TINY_MODEL = os.getenv(
+    "SMOKE_MODEL", "hf-internal-testing/tiny-random-RobertaForSequenceClassification"
+)
 
 
 def _contract(cid, present):
     from utils.data_loader import ContractData
+
     filler = "The parties agree to the terms set out below. " * 400
     clause = "This Agreement is governed by the laws of the State of New York."
     text = filler + clause + " " + filler if present else filler * 2
-    spans = {"Governing Law": [(len(filler), len(filler) + len(clause))] if present else [],
-             "Insurance": []}
+    spans = {
+        "Governing Law": [(len(filler), len(filler) + len(clause))] if present else [],
+        "Insurance": [],
+    }
     return ContractData(cid, text, {"Governing Law": present, "Insurance": False}, spans=spans)
 
 
@@ -45,8 +50,11 @@ def test_train_save_load_and_predict_whole_contracts(tmp_path, monkeypatch):
     assert len(spans) > 10
     assert spans[-1][1] >= len(contract.text.rstrip()) - 1
 
-    result = clf.train([_contract("t1", True), _contract("t2", False), _contract("t3", True)],
-                       [_contract("v1", True)], output_dir=str(tmp_path / "model"))
+    result = clf.train(
+        [_contract("t1", True), _contract("t2", False), _contract("t3", True)],
+        [_contract("v1", True)],
+        output_dir=str(tmp_path / "model"),
+    )
     assert result.train_windows > 0 and result.val_windows > 0
 
     loaded = FineTunedClassifier(model_name=str(tmp_path / "model"))

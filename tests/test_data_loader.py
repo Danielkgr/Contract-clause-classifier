@@ -22,13 +22,15 @@ def _write_cuad(path, documents):
     """Write a small file in the CUAD SQuAD 2.0 layout."""
     data = []
     for title, paragraphs in documents:
-        data.append({
-            "title": title,
-            "paragraphs": [
-                {"context": context, "qas": [_qa(title, *answer) for answer in answers]}
-                for context, answers in paragraphs
-            ],
-        })
+        data.append(
+            {
+                "title": title,
+                "paragraphs": [
+                    {"context": context, "qas": [_qa(title, *answer) for answer in answers]}
+                    for context, answers in paragraphs
+                ],
+            }
+        )
     path.write_text(json.dumps({"version": "aok_v1.0", "data": data}))
     return str(path)
 
@@ -40,9 +42,12 @@ def _title_in(split):
 
 def test_presence_comes_from_answer_spans(tmp_path):
     title = _title_in("test")
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (title, [("Full text.", [("Governing Law", True), ("Audit Rights", False)])]),
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json",
+        [
+            (title, [("Full text.", [("Governing Law", True), ("Audit Rights", False)])]),
+        ],
+    )
     [contract] = parse_cuad_json(path, "test", clause_types=["Governing Law", "Audit Rights"])
     assert contract.contract_id == title
     assert contract.text == "Full text."
@@ -51,30 +56,42 @@ def test_presence_comes_from_answer_spans(tmp_path):
 
 def test_clause_types_match_categories_ignoring_case(tmp_path):
     title = _title_in("train")
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (title, [("Text.", [("Cap On Liability", True)])]),
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json",
+        [
+            (title, [("Text.", [("Cap On Liability", True)])]),
+        ],
+    )
     [contract] = parse_cuad_json(path, "train", clause_types=["Cap on Liability"])
     assert contract.clauses == {"Cap on Liability": True}
 
 
 def test_unknown_clause_type_raises_instead_of_labelling_absent(tmp_path):
     title = _title_in("train")
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (title, [("Text.", [("Governing Law", True)])]),
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json",
+        [
+            (title, [("Text.", [("Governing Law", True)])]),
+        ],
+    )
     with pytest.raises(ValueError, match="Arbitration"):
         parse_cuad_json(path, "train", clause_types=["Arbitration"])
 
 
 def test_a_clause_in_any_paragraph_counts_as_present(tmp_path):
     title = _title_in("validation")
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (title, [
-            ("First part.", [("Insurance", False)]),
-            ("Second part.", [("Insurance", True)]),
-        ]),
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json",
+        [
+            (
+                title,
+                [
+                    ("First part.", [("Insurance", False)]),
+                    ("Second part.", [("Insurance", True)]),
+                ],
+            ),
+        ],
+    )
     [contract] = parse_cuad_json(path, "validation", clause_types=["Insurance"])
     assert contract.clauses == {"Insurance": True}
     assert contract.text == "First part.\nSecond part."
@@ -82,9 +99,9 @@ def test_a_clause_in_any_paragraph_counts_as_present(tmp_path):
 
 def test_splits_are_disjoint_complete_and_stable(tmp_path):
     titles = [f"contract-{i}" for i in range(300)]
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (t, [("Text.", [("Governing Law", True)])]) for t in titles
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json", [(t, [("Text.", [("Governing Law", True)])]) for t in titles]
+    )
     by_split = {
         s: [c.contract_id for c in parse_cuad_json(path, s, clause_types=["Governing Law"])]
         for s in SPLITS
@@ -98,9 +115,9 @@ def test_splits_are_disjoint_complete_and_stable(tmp_path):
 
 def test_max_samples_limits_contracts(tmp_path):
     titles = [f"contract-{i}" for i in range(100)]
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (t, [("Text.", [("Governing Law", True)])]) for t in titles
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json", [(t, [("Text.", [("Governing Law", True)])]) for t in titles]
+    )
     assert len(parse_cuad_json(path, "train", max_samples=5, clause_types=["Governing Law"])) == 5
 
 
@@ -125,12 +142,18 @@ def test_spans_give_character_offsets_into_the_joined_text(tmp_path):
     first = "Recitals.  Nothing to see."
     second = "Clause 9.  This Agreement is governed by the laws of Victoria."
     law = "governed by the laws of Victoria"
-    path = _write_cuad(tmp_path / "cuad.json", [
-        (title, [
-            (first, [("Governing Law", False)]),
-            (second, [("Governing Law", True, second.index(law), law)]),
-        ]),
-    ])
+    path = _write_cuad(
+        tmp_path / "cuad.json",
+        [
+            (
+                title,
+                [
+                    (first, [("Governing Law", False)]),
+                    (second, [("Governing Law", True, second.index(law), law)]),
+                ],
+            ),
+        ],
+    )
     [contract] = parse_cuad_json(path, "test", clause_types=["Governing Law"])
     [(start, end)] = contract.spans["Governing Law"]
     assert contract.text[start:end] == law
@@ -141,16 +164,55 @@ REAL_CUAD = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "CU
 
 @pytest.mark.skipif(not os.path.exists(REAL_CUAD), reason="data/CUAD_v1.json not downloaded")
 def test_real_cuad_splits_and_spans():
-    sizes = {s: len(parse_cuad_json(REAL_CUAD, s, clause_types=DEFAULT_CLAUSE_TYPES)) for s in SPLITS}
+    sizes = {
+        s: len(parse_cuad_json(REAL_CUAD, s, clause_types=DEFAULT_CLAUSE_TYPES)) for s in SPLITS
+    }
     assert sizes == {"train": 401, "validation": 53, "test": 56}
 
     with open(REAL_CUAD) as fh:
         answers = {
             (d["title"], q["id"].rsplit("__", 1)[-1]): {a["text"] for a in q["answers"]}
-            for d in json.load(fh)["data"] for p in d["paragraphs"] for q in p["qas"]
+            for d in json.load(fh)["data"]
+            for p in d["paragraphs"]
+            for q in p["qas"]
         }
     for contract in parse_cuad_json(REAL_CUAD, "test", clause_types=DEFAULT_CLAUSE_TYPES):
         for ct in DEFAULT_CLAUSE_TYPES:
             assert contract.clauses[ct] == bool(contract.spans[ct])
             for start, end in contract.spans[ct]:
                 assert contract.text[start:end] in answers[(contract.contract_id, ct)]
+
+
+def test_an_explicit_cuad_path_is_used(tmp_path):
+    from utils.data_loader import load_cuad_dataset
+
+    title = _title_in("test")
+    path = _write_cuad(tmp_path / "cuad.json", [(title, [("Text.", [("Insurance", True)])])])
+    [contract] = load_cuad_dataset("test", path=path, clause_types=["Insurance"])
+    assert contract.contract_id == title
+
+
+def test_a_missing_explicit_path_fails_instead_of_falling_back(tmp_path):
+    from utils.data_loader import load_cuad_dataset
+
+    with pytest.raises(FileNotFoundError, match="No CUAD file at"):
+        load_cuad_dataset("test", path=str(tmp_path / "absent.json"))
+
+
+def test_a_failed_download_says_where_to_put_the_file(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    from config import config
+    from utils.data_loader import cuad_json_path
+
+    def offline(**kwargs):
+        raise OSError("network unreachable")
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = offline
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setattr(config.paths, "data_dir", str(tmp_path))
+    monkeypatch.setattr(config.data, "cuad_path", None)
+    with pytest.raises(FileNotFoundError, match="data/CUAD_v1.json.*network unreachable"):
+        cuad_json_path()

@@ -8,33 +8,36 @@ contract is predicted to contain a clause type when any of its windows scores
 at or above the threshold.
 """
 
+import logging
 import os
 import random
 import time
-import logging
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 from transformers import (
-    AutoTokenizer, AutoModelForSequenceClassification,
-    TrainingArguments, Trainer, DataCollatorWithPadding
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    Trainer,
+    TrainingArguments,
 )
 
 from config import config
 from utils.chunking import window_labels
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class TrainingResult:
     """Results from model training."""
+
     model_path: str
-    metrics: Dict[str, float]
+    metrics: dict[str, float]
     training_time_seconds: float
     epochs: int
     train_windows: int
@@ -44,8 +47,9 @@ class TrainingResult:
 class WindowDataset(Dataset):
     """Tokenised contract windows with one 0/1 label per clause type."""
 
-    def __init__(self, input_ids: List[List[int]], attention_mask: List[List[int]],
-                 labels: List[List[int]]):
+    def __init__(
+        self, input_ids: list[list[int]], attention_mask: list[list[int]], labels: list[list[int]]
+    ):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
         self.labels = labels
@@ -74,9 +78,9 @@ class FineTunedClassifier:
 
     def __init__(
         self,
-        clause_types: Optional[Sequence[str]] = None,
-        model_name: Optional[str] = None,
-        device: Optional[torch.device] = None
+        clause_types: Sequence[str] | None = None,
+        model_name: str | None = None,
+        device: torch.device | None = None,
     ):
         """Initialize classifier.
 
@@ -96,7 +100,7 @@ class FineTunedClassifier:
         logger.info(f"Initialized classifier with model: {self.model_name}")
         logger.info(f"Using device: {self.device}")
 
-    def windows(self, text: str) -> Tuple[List[List[int]], List[List[int]], List[Tuple[int, int]]]:
+    def windows(self, text: str) -> tuple[list[list[int]], list[list[int]], list[tuple[int, int]]]:
         """Split text into overlapping token windows covering all of it.
 
         The whole text is tokenised once and sliced here, rather than through
@@ -108,7 +112,10 @@ class FineTunedClassifier:
             window, where char_spans gives each window's (start, end) in text
         """
         enc = self.tokenizer(
-            text, add_special_tokens=False, return_offsets_mapping=True, verbose=False,
+            text,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+            verbose=False,
         )
         ids, offsets = enc["input_ids"], enc["offset_mapping"]
         prefix, suffix = self._special_tokens()
@@ -122,11 +129,11 @@ class FineTunedClassifier:
         input_ids, attention_mask, char_spans = [], [], []
         start = 0
         while True:
-            piece = ids[start:start + body]
+            piece = ids[start : start + body]
             window = prefix + piece + suffix
             input_ids.append(window)
             attention_mask.append([1] * len(window))
-            piece_offsets = offsets[start:start + body]
+            piece_offsets = offsets[start : start + body]
             char_spans.append(
                 (piece_offsets[0][0], piece_offsets[-1][1]) if piece_offsets else (0, 0)
             )
@@ -134,17 +141,18 @@ class FineTunedClassifier:
                 return input_ids, attention_mask, char_spans
             start += step
 
-    def _special_tokens(self) -> Tuple[List[int], List[int]]:
+    def _special_tokens(self) -> tuple[list[int], list[int]]:
         """The ids the tokenizer puts before and after a single sequence."""
         inner = self.tokenizer("contract", add_special_tokens=False)["input_ids"]
         full = self.tokenizer("contract")["input_ids"]
         for i in range(len(full) - len(inner) + 1):
-            if full[i:i + len(inner)] == inner:
-                return full[:i], full[i + len(inner):]
+            if full[i : i + len(inner)] == inner:
+                return full[:i], full[i + len(inner) :]
         raise ValueError("Could not locate the special tokens this tokenizer adds")
 
-    def build_dataset(self, contracts, negative_ratio: Optional[float] = None,
-                      seed: int = 42) -> WindowDataset:
+    def build_dataset(
+        self, contracts, negative_ratio: float | None = None, seed: int = 42
+    ) -> WindowDataset:
         """Build labelled windows from contracts.
 
         Every window containing at least one clause is kept.  All-negative
@@ -156,8 +164,11 @@ class FineTunedClassifier:
 
         positives, negatives = [], []
         for contract in contracts:
-            missing = [ct for ct in self.clause_types
-                       if contract.clauses.get(ct) and not contract.spans.get(ct)]
+            missing = [
+                ct
+                for ct in self.clause_types
+                if contract.clauses.get(ct) and not contract.spans.get(ct)
+            ]
             if missing:
                 raise ValueError(
                     f"{contract.contract_id} marks {missing} present but has no answer "
@@ -165,22 +176,27 @@ class FineTunedClassifier:
                 )
             ids, mask, char_spans = self.windows(contract.text)
             labels = window_labels(char_spans, contract.spans, self.clause_types)
-            for row in zip(ids, mask, labels):
+            for row in zip(ids, mask, labels, strict=False):
                 (positives if any(row[2]) else negatives).append(row)
 
         if not positives:
-            raise ValueError("No window contains any active clause type, so there is nothing to learn")
+            raise ValueError(
+                "No window contains any active clause type, so there is nothing to learn"
+            )
 
         rng = random.Random(seed)
         keep = min(len(negatives), int(round(len(positives) * negative_ratio)))
         rows = positives + rng.sample(negatives, keep)
         rng.shuffle(rows)
-        logger.info(f"Built {len(rows)} windows: {len(positives)} with a clause, "
-                    f"{keep} of {len(negatives)} without")
+        logger.info(
+            f"Built {len(rows)} windows: {len(positives)} with a clause, "
+            f"{keep} of {len(negatives)} without"
+        )
         return WindowDataset([r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows])
 
-    def train(self, train_contracts, val_contracts=None,
-              output_dir: Optional[str] = None) -> TrainingResult:
+    def train(
+        self, train_contracts, val_contracts=None, output_dir: str | None = None
+    ) -> TrainingResult:
         """Fine-tune on the windows of train_contracts.
 
         Args:
@@ -231,6 +247,7 @@ class FineTunedClassifier:
 
         def compute_metrics(eval_pred):
             from sklearn.metrics import precision_recall_fscore_support
+
             logits, labels = eval_pred
             preds = (1 / (1 + np.exp(-logits)) >= threshold).astype(int)
             precision, recall, f1, _ = precision_recall_fscore_support(
@@ -291,8 +308,9 @@ class FineTunedClassifier:
 
         logger.info(f"Loaded model from {model_path}")
 
-    def predict_contract(self, text: str, batch_size: Optional[int] = None
-                         ) -> Tuple[Dict[str, float], float]:
+    def predict_contract(
+        self, text: str, batch_size: int | None = None
+    ) -> tuple[dict[str, float], float]:
         """Score a whole contract.
 
         Returns:
@@ -310,14 +328,17 @@ class FineTunedClassifier:
         with torch.no_grad():
             for i in range(0, len(ids), batch_size):
                 batch = self.tokenizer.pad(
-                    {"input_ids": ids[i:i + batch_size], "attention_mask": mask[i:i + batch_size]},
+                    {
+                        "input_ids": ids[i : i + batch_size],
+                        "attention_mask": mask[i : i + batch_size],
+                    },
                     return_tensors="pt",
                 ).to(self.device)
                 probs = torch.sigmoid(self.model(**batch).logits).cpu().numpy()
                 best = np.maximum(best, probs.max(axis=0))
         latency_ms = (time.perf_counter() - start) * 1000
 
-        return dict(zip(self.clause_types, best.tolist())), latency_ms
+        return dict(zip(self.clause_types, best.tolist(), strict=False)), latency_ms
 
     def save(self, output_path: str):
         """Save model to path.

@@ -19,8 +19,11 @@ ENV/
 # Jupyter
 .ipynb_checkpoints/
 
-# Environment
+# Environment files hold API keys and must never be committed
 .env
+.env.local
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -34,12 +37,12 @@ ENV/
 Thumbs.db
 
 # Data / Models / Outputs (generated or large)
-data/*.csv
 data/*.json
-data/*.parquet
-data/*.pq
 models/
 outputs/
 
 # HuggingFace cache
 .huggingface/
+
+# Cached LLM responses
+.cache/

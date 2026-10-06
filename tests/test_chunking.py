@@ -11,7 +11,7 @@ def test_chunks_cover_the_whole_text_within_size():
     assert chunks[0][0] == 0
     assert chunks[-1][1] == len(text)
     assert all(end - start <= 1000 for start, end in chunks)
-    for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:]):
+    for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:], strict=False):
         assert next_start < prev_end  # consecutive chunks overlap, so nothing is skipped
 
 
@@ -44,5 +44,7 @@ def test_window_labels_follow_span_overlap():
     windows = [(0, 100), (80, 180), (160, 260)]
     spans = {"Governing Law": [(150, 170)], "Insurance": []}
     assert window_labels(windows, spans, ["Governing Law", "Insurance"]) == [
-        [0, 0], [1, 0], [1, 0],
+        [0, 0],
+        [1, 0],
+        [1, 0],
     ]
