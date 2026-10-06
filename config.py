@@ -36,6 +36,9 @@ def _setting(env: Mapping[str, str], name: str, default: T, kind: Callable[[str]
         raise ValueError(f"{name} must be {expected}, got {raw!r}") from None
 
 
+# Thinking depths that Opus and Sonnet accept as output_config.effort
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
 # The model used when LLM_MODEL is not set
 DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "openai": "gpt-4o-mini"}
 
@@ -250,7 +253,6 @@ class Paths:
     outputs_dir: str = os.path.join(base_dir, "outputs")
     models_dir: str = os.path.join(base_dir, "models")
     notebook_dir: str = base_dir
-
 
 
 @dataclass

@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![106 tests](https://img.shields.io/badge/tests-106-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![126 tests](https://img.shields.io/badge/tests-126-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -21,7 +21,7 @@ An evaluation harness.  It fine-tunes a RoBERTa classifier, prompts an LLM zero-
 > [!IMPORTANT]
 > It is not a deployed classifier.  It does not serve predictions, store contracts, or ship a production model.
 
-It is a working prototype.  The whole pipeline has run end to end on CUAD with a small test model and a stand-in for the LLM, which checks the plumbing and says nothing about accuracy.
+It is a working prototype.  Its tests run every stage on stand-in models and a mocked API, which checks the plumbing and says nothing about accuracy.
 
 <br>
 
@@ -45,8 +45,8 @@ CUAD contracts are long.  The median runs to 33,000 characters and the longest t
 | **Wrap** | `ContractData` | Holds each contract's title, its full text, whether each clause type is present, and the character offsets of every CUAD answer span. |
 | **Fine-tune** | `utils/classifier.py` | Trains one multi-label `roberta-base` model on overlapping windows of the training contracts, labelled from the answer spans. |
 | **Zero-shot** | `utils/anthropic_client.py` | Asks Claude which clause types appear in each chunk of the contract, through the official `anthropic` SDK, with a JSON answer.  `utils/openai_client.py` keeps an OpenAI path for comparison. |
-| **Evaluate** | `utils/evaluation.py` | Runs both arms over the test contracts and times each contract.  The CLI and the notebook share this code. |
-| **Report** | `compare_classifiers.py` | Writes the metrics table, the plot, a summary, and the full report to `outputs/`. |
+| **Evaluate** | `utils/evaluation.py` | Runs both arms over the test contracts, times each contract, and saves each arm's results. |
+| **Report** | `utils/report.py` | Scores every saved arm on the contracts they share, and writes the metrics table, the plot, a summary, and the full report to `outputs/`. |
 
 ### The fine-tuned arm
 
@@ -106,12 +106,14 @@ These are the trade-offs the report is built to test.  Until a run is published 
 
 ```bash
 pip install -r requirements.txt
-python compare_classifiers.py
+cp .env.example .env       # then put your Anthropic API key in it
+python compare_classifiers.py estimate
+python compare_classifiers.py zero-shot --max-contracts 5
 ```
 
-The first run downloads `CUAD_v1.json` (about 40 MB) from Hugging Face.  To work offline, save that file to `data/CUAD_v1.json` and the loader will use it.
+The first command that reads CUAD downloads `CUAD_v1.json` (about 40 MB) from Hugging Face.  To work offline, save that file to `data/CUAD_v1.json`, or point `CUAD_PATH` or `--cuad` at it.  `estimate` needs no API key.  `zero-shot --max-contracts 5` asks Claude about five test contracts, which is the cheapest way to see the pipeline work.
 
-Option 1 in the menu is a quick test that asks the LLM about 5 test contracts, and adds the fine-tuned model only if one has already been saved.  It is the cheapest way to see the pipeline work.  Every setting can be changed from the menu, so a `.env` file is optional.  To keep settings between sessions, copy `.env.example` to `.env` and fill it in.  The file is read once at startup, and a variable already set in the shell takes precedence over it.
+Settings come from `.env` and the environment.  The file is read once at startup, a variable already set in the shell takes precedence over it, and command-line flags override both.
 
 ```bash
 pip install -r requirements-dev.txt
@@ -124,62 +126,34 @@ The tests cover CUAD parsing, splitting, and answer spans, chunking and window l
 
 ## Usage
 
-### Main menu
+### Commands
 
-```text
-═══════════════════ Main Menu ════════════════════
-  1. Quick test (5 contracts, zero-shot)
-  2. Full comparison (train + evaluate)
-  3. Train only
-  4. Evaluate only (use existing model)
-  5. Configure settings
-  6. View configuration
-  7. Show settings as environment variables
-  8. Exit
+| Command | What it does | Needs |
+|---|---|---|
+| `estimate` | Counts the calls and characters a zero-shot run would send and prices them, with no API call | CUAD, or a contract text file |
+| `zero-shot` | Asks the LLM about every test contract and saves `outputs/zero_shot-<model>-<mode>.json` | An API key |
+| `fine-tune` | Trains RoBERTa on the train split, checked against the validation split, then scores the test split and saves `outputs/fine_tuned-<model>.json` | torch, and in practice a GPU |
+| `compare` | Writes the report from every saved arm result in `outputs/` | Saved arm results |
+| `show-config` | Shows the active settings, with the API key masked | Nothing |
 
-Choose an option [1]:
-```
-
-| # | Action | What it does |
-|:--:|---|---|
-| **1** | Quick test | Asks the LLM about 5 test contracts, adding any saved fine-tuned model, and skips training |
-| **2** | Full comparison | Downloads the data, trains the fine-tuned model, and evaluates both classifiers |
-| **3** | Train only | Trains a new fine-tuned model on the train split, checked against the validation split |
-| **4** | Evaluate only | Evaluates the LLM and the saved model in `models/fine_tuned/`, without training |
-| **5** | Configure settings | Opens the configuration menu described below |
-| **6** | View configuration | Shows every active setting, read only |
-| **7** | Show settings | Shows the settings as environment variables, with the API key masked.  Nothing is written to disk. |
-| **8** | Exit | Leaves the program |
-
-### Configuration menu
-
-| Submenu | What it sets |
-|---|---|
-| **LLM settings** | Provider (`anthropic` or `openai`), model name, API key, base URL, temperature, and max tokens |
-| **Training settings** | Model name, epochs, batch size, learning rate, max token length, weight decay, warmup steps, eval steps, and save steps |
-| **Clause types** | A checklist of active clause types, with options to add another CUAD category, remove one, or restore the 12 defaults |
-| **Output directory** | Where results are saved.  The directory is created if it does not exist. |
-
-### Flags
-
-Passing `--quick-test`, `--max-samples`, or `--estimate` skips the menu and every prompt.
+Each arm saves its own results, so the zero-shot arm can run on a laptop and the fine-tuned arm on a GPU machine, and `compare` reports on whatever it finds.  It scores every arm on the contracts and clause types they all share.  Every command takes `--clause-types`, `--output DIR`, and `--cuad PATH`, and `python compare_classifiers.py <command> --help` lists the rest.
 
 ```bash
-# Quick test on 5 test contracts
-python compare_classifiers.py --quick-test
+# Five test contracts, the cheapest real run
+python compare_classifiers.py zero-shot --max-contracts 5
 
-# Train, then evaluate on at most N test contracts
-python compare_classifiers.py --max-samples 20
+# Claude Haiku 4.5, asking about one clause type per call
+python compare_classifiers.py zero-shot --model claude-haiku-4-5 --mode single
 
-# Write results somewhere other than outputs/
-python compare_classifiers.py --output ./custom_output
+# Score the saved model again without training, or train without scoring
+python compare_classifiers.py fine-tune --skip-training
+python compare_classifiers.py fine-tune --skip-evaluation --epochs 1
 
-# Estimate calls, tokens, and cost of the zero-shot arm, with no API call or key
-python compare_classifiers.py --estimate
-python compare_classifiers.py --estimate --text-file contract.txt
+# Ask again without the response cache
+python compare_classifiers.py zero-shot --no-cache
 
-# Neither read nor write the response cache
-python compare_classifiers.py --quick-test --no-cache
+# Estimate the cost for a contract of your own
+python compare_classifiers.py estimate --text-file contract.txt
 ```
 
 The estimate counts calls and characters exactly from the run's own chunking.  Tokens are characters divided by 4 and output is assumed at 200 tokens per call, which `--output-tokens` changes, so its token and cost figures are estimates.
@@ -223,7 +197,7 @@ The estimate counts calls and characters exactly from the run's own chunking.  T
 
 ### Default clause types
 
-The defaults are 12 of CUAD's 41 categories, a mix of common and rarer clauses.  Any other category can be added from the menu, spelled as it is in `CUAD_CATEGORIES` in `config.py`.  A name that is not a CUAD category stops the load with an error that lists the valid ones, rather than labelling every contract as absent.
+The defaults are 12 of CUAD's 41 categories, a mix of common and rarer clauses.  Any other category can be chosen with `--clause-types`, spelled as it is in `CUAD_CATEGORIES` in `config.py` though case does not matter.  A name that is not a CUAD category stops the command with an error that lists the valid ones, rather than labelling every contract as absent.
 
 | Clause type | What it covers |
 |---|---|
@@ -246,6 +220,8 @@ Every artefact is written to `outputs/`.
 
 | File | Contents |
 |---|---|
+| `zero_shot-<model>-<mode>.json` | One zero-shot run: every contract's labels, predictions, latency, cost, and calls, and the settings used |
+| `fine_tuned-<model>.json` | The same for the fine-tuned model |
 | `comparison_metrics.csv` | Metrics for each clause type and each method, in long format |
 | `comparison_plot.png` | A two-by-two bar chart of precision, recall, F1, and accuracy |
 | `summary.md` | A short summary with the key numbers |
@@ -264,7 +240,7 @@ Every artefact is written to `outputs/`.
 
 | Area | Libraries |
 |---|---|
-| **CLI** | `rich` |
+| **CLI** | `argparse`, from the standard library |
 | **Machine learning** | `torch`, `transformers`, `accelerate` |
 | **Data** | `huggingface_hub`, `datasets`, `pandas` |
 | **Evaluation** | `scikit-learn`, `numpy` |
@@ -279,7 +255,7 @@ Every artefact is written to `outputs/`.
 
 ```text
 Contract-clause-classifier/
-  compare_classifiers.py     Entry point, with the interactive CLI and the pipeline
+  compare_classifiers.py     Command line: estimate, zero-shot, fine-tune, compare, show-config
   config.py                  Configuration as dataclasses, read from the environment
   evaluation.ipynb           Jupyter notebook for interactive exploration
   requirements.txt           Python dependencies
@@ -294,6 +270,7 @@ Contract-clause-classifier/
     pricing.py               List prices and the cost of a call from its usage
     response_cache.py        Completed API responses on disk, so a re-run is free
     estimate.py              Calls, tokens, and cost of a run, estimated with no API call
+    report.py                The comparison report, from saved arm results
     data_loader.py           CUAD loading and splitting, from data/ or Hugging Face
     classifier.py            Windowed multi-label transformer (FineTunedClassifier)
     chunking.py              Contract chunks and window labels from answer spans

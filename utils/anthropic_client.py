@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import anthropic
 
+from config import EFFORTS
 from utils.llm_client import (
     Completion,
     FatalLLMError,
@@ -21,8 +22,6 @@ from utils.llm_client import (
     Usage,
 )
 from utils.prompts import answer_schema, system_prompt, user_message
-
-EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 @dataclass(frozen=True)

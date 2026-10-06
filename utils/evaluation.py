@@ -6,6 +6,9 @@ clause appears anywhere in the contract, so both are scored against the same
 CUAD labels.  Latency and cost are measured per contract.
 """
 
+import dataclasses
+import json
+import os
 from collections import Counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -41,6 +44,10 @@ class ContractResult:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     outcomes: dict[str, int] = field(default_factory=dict)  # call outcome -> count
+
+
+# Version of the saved results layout, checked when results are loaded
+RESULTS_FORMAT = 1
 
 
 @dataclass
@@ -117,6 +124,67 @@ class ArmResult:
         for contract in self.contracts:
             total.update(contract.outcomes)
         return dict(total)
+
+    @property
+    def label(self) -> str:
+        """A readable name, such as "Zero-shot claude-opus-5-5, multi-label"."""
+        if self.arm == "zero_shot":
+            mode = self.settings.get("mode")
+            name = f"Zero-shot {self.model.split('/', 1)[-1]}"
+            return f"{name}, {mode}-label" if mode else name
+        return f"Fine-tuned {self.model}"
+
+    def restrict(self, contract_ids: Sequence[str], clause_types: Sequence[str]) -> "ArmResult":
+        """The same arm, keeping only these contracts, in this order, and clause types.
+
+        Latency and cost stay as measured for each contract's whole run.
+        """
+        by_id = {c.contract_id: c for c in self.contracts}
+        contracts = [
+            dataclasses.replace(
+                by_id[cid],
+                labels={ct: by_id[cid].labels[ct] for ct in clause_types},
+                predictions={ct: by_id[cid].predictions[ct] for ct in clause_types},
+            )
+            for cid in contract_ids
+            if cid in by_id
+        ]
+        return dataclasses.replace(self, clause_types=list(clause_types), contracts=contracts)
+
+    def to_dict(self) -> dict:
+        return {
+            "format": RESULTS_FORMAT,
+            "arm": self.arm,
+            "model": self.model,
+            "clause_types": self.clause_types,
+            "settings": self.settings,
+            "contracts": [dataclasses.asdict(c) for c in self.contracts],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ArmResult":
+        if data.get("format") != RESULTS_FORMAT:
+            raise ValueError(
+                f"Unknown results format {data.get('format')!r}, expected {RESULTS_FORMAT}"
+            )
+        return cls(
+            arm=data["arm"],
+            model=data["model"],
+            clause_types=list(data["clause_types"]),
+            contracts=[ContractResult(**c) for c in data["contracts"]],
+            settings=dict(data.get("settings", {})),
+        )
+
+    def save(self, path: str) -> None:
+        """Write the results as JSON, creating the directory if needed."""
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(self.to_dict(), fh, indent=1)
+
+    @classmethod
+    def load(cls, path: str) -> "ArmResult":
+        with open(path, encoding="utf-8") as fh:
+            return cls.from_dict(json.load(fh))
 
 
 def _labels(contract, clause_types: Sequence[str]) -> dict[str, int]:
