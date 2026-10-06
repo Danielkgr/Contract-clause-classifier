@@ -7,10 +7,10 @@ import types
 
 import httpx2
 import pytest
-from mock_api import MockAPI, message
 
 import compare_classifiers as cli
 from config import config
+from mock_api import MockAPI, message
 from utils.data_loader import split_of
 from utils.evaluation import ArmResult, ContractResult
 

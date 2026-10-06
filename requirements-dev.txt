@@ -7,4 +7,5 @@ pandas>=2.0.0
 python-dotenv>=1.0.0
 scikit-learn>=1.3.0
 pytest>=8.0
+ruff==0.16.10  # pinned so local and CI formatting agree
 # tests/test_classifier_smoke.py also needs torch and transformers and RUN_SMOKE=1

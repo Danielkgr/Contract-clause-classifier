@@ -1,9 +1,9 @@
 """Tests for retries with backoff and the on-disk response cache, with the API mocked."""
 
 import pytest
-from mock_api import MockAPI, error, message
 
 from config import LLMConfig
+from mock_api import MockAPI, error, message
 from utils.llm_client import RetryPolicy, make_client
 from utils.response_cache import ResponseCache, cache_key
 

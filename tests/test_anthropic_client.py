@@ -1,8 +1,8 @@
 """Tests for the Claude client, with the Messages API mocked at the HTTP layer."""
 
 import pytest
-from mock_api import MockAPI, error, message
 
+from mock_api import MockAPI, error, message
 from utils.anthropic_client import AnthropicClient
 from utils.llm_client import FatalLLMError
 

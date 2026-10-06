@@ -2,12 +2,12 @@
 Data loading and preprocessing module for CUAD dataset.
 """
 
-import os
-import json
 import hashlib
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass, field
+import json
 import logging
+import os
+from dataclasses import dataclass, field
+
 import pandas as pd
 
 from config import config
@@ -20,20 +20,21 @@ SPLITS = ("train", "validation", "test")
 @dataclass
 class ContractData:
     """Single contract with clauses."""
+
     contract_id: str
     text: str
-    clauses: Dict[str, bool]  # clause_type -> is_present
-    file_path: Optional[str] = None
+    clauses: dict[str, bool]  # clause_type -> is_present
+    file_path: str | None = None
     # clause_type -> (start, end) character offsets of each answer span in text
-    spans: Dict[str, List[Tuple[int, int]]] = field(default_factory=dict)
+    spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
 
 
 def load_cuad_dataset(
     split: str = "train",
-    max_samples: Optional[int] = None,
-    path: Optional[str] = None,
-    clause_types: Optional[List[str]] = None,
-) -> List[ContractData]:
+    max_samples: int | None = None,
+    path: str | None = None,
+    clause_types: list[str] | None = None,
+) -> list[ContractData]:
     """Load one split of CUAD v1.
 
     CUAD ships as one SQuAD 2.0 file with no splits, so contracts are split
@@ -58,7 +59,7 @@ def load_cuad_dataset(
     return contracts
 
 
-def cuad_json_path(path: Optional[str] = None) -> str:
+def cuad_json_path(path: str | None = None) -> str:
     """Find CUAD_v1.json: path, then CUAD_PATH, then data/, then a Hugging Face download.
 
     A path given explicitly, or through CUAD_PATH, must exist.  Nothing falls
@@ -104,9 +105,9 @@ def split_of(title: str) -> str:
 def parse_cuad_json(
     path: str,
     split: str,
-    max_samples: Optional[int] = None,
-    clause_types: Optional[List[str]] = None,
-) -> List[ContractData]:
+    max_samples: int | None = None,
+    clause_types: list[str] | None = None,
+) -> list[ContractData]:
     """Parse a CUAD SQuAD 2.0 file into ContractData for one split.
 
     Each question id ends in "__<category>".  Clause types are matched to
@@ -131,8 +132,8 @@ def parse_cuad_json(
     for doc in docs:
         texts = []
         offset = 0
-        present: Dict[str, bool] = {}
-        spans: Dict[str, List[Tuple[int, int]]] = {}
+        present: dict[str, bool] = {}
+        spans: dict[str, list[tuple[int, int]]] = {}
         for paragraph in doc["paragraphs"]:
             texts.append(paragraph["context"])
             for qa in paragraph["qas"]:
@@ -153,9 +154,7 @@ def parse_cuad_json(
     by_key = {c.casefold(): c for c in categories}
     unknown = [ct for ct in clause_types if ct.casefold() not in by_key]
     if unknown:
-        raise ValueError(
-            f"Not CUAD categories: {unknown}.  Valid categories: {sorted(categories)}"
-        )
+        raise ValueError(f"Not CUAD categories: {unknown}.  Valid categories: {sorted(categories)}")
 
     return [
         ContractData(
@@ -168,17 +167,17 @@ def parse_cuad_json(
     ]
 
 
-def get_clause_distribution(contracts: List[ContractData]) -> pd.DataFrame:
+def get_clause_distribution(contracts: list[ContractData]) -> pd.DataFrame:
     """Get distribution of clause types across contracts.
-    
+
     Args:
         contracts: List of ContractData objects
-        
+
     Returns:
         DataFrame with clause type distribution
     """
     distribution = {}
-    
+
     for contract in contracts:
         for clause_type, is_present in contract.clauses.items():
             if clause_type not in distribution:
@@ -187,9 +186,9 @@ def get_clause_distribution(contracts: List[ContractData]) -> pd.DataFrame:
                 distribution[clause_type]["present"] += 1
             else:
                 distribution[clause_type]["absent"] += 1
-    
+
     df = pd.DataFrame(distribution).T
     df["total"] = df["present"] + df["absent"]
     df["presence_rate"] = df["present"] / df["total"]
-    
+
     return df.sort_values("presence_rate", ascending=False)

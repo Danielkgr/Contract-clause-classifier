@@ -5,12 +5,12 @@ CUAD contracts run from a few thousand to over 300,000 characters, and the
 clauses sit throughout them, so neither arm can look at a fixed prefix.
 """
 
-from typing import Dict, List, Sequence, Tuple
+from collections.abc import Sequence
 
-Span = Tuple[int, int]
+Span = tuple[int, int]
 
 
-def char_chunks(text: str, size: int, overlap: int) -> List[Span]:
+def char_chunks(text: str, size: int, overlap: int) -> list[Span]:
     """Split text into (start, end) character ranges of at most size characters.
 
     Consecutive chunks overlap by about overlap characters, so a clause that
@@ -48,11 +48,10 @@ def overlaps(window: Span, spans: Sequence[Span]) -> bool:
 
 def window_labels(
     windows: Sequence[Span],
-    spans_by_type: Dict[str, Sequence[Span]],
+    spans_by_type: dict[str, Sequence[Span]],
     clause_types: Sequence[str],
-) -> List[List[int]]:
+) -> list[list[int]]:
     """Label each window 1 or 0 for each clause type by span overlap."""
     return [
-        [1 if overlaps(w, spans_by_type.get(ct, ())) else 0 for ct in clause_types]
-        for w in windows
+        [1 if overlaps(w, spans_by_type.get(ct, ())) else 0 for ct in clause_types] for w in windows
     ]
