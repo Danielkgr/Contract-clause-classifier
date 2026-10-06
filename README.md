@@ -232,9 +232,8 @@ Every artefact is written to `outputs/`.
 | Class or function | Purpose |
 |---|---|
 | `ClassificationMetrics` | Precision, recall, F1, accuracy, and the TP, FP, TN, and FN counts |
-| `InferenceStats` | Total, average, minimum, and maximum latency per contract in milliseconds, cost (or none when unpriced), and token counts |
-| `aggregate_metrics()` | Mean, minimum, and maximum across clause types |
-| `print_comparison_table()` | The comparison table printed to the terminal |
+| `InferenceStats` | Total, average, minimum, and maximum latency per contract in milliseconds, cost or none when unpriced, and token counts |
+| `aggregate_metrics()` | Mean of each metric across clause types, with the lowest and highest precision |
 
 ### Stack
 
@@ -242,11 +241,11 @@ Every artefact is written to `outputs/`.
 |---|---|
 | **CLI** | `argparse`, from the standard library |
 | **Machine learning** | `torch`, `transformers`, `accelerate` |
-| **Data** | `huggingface_hub`, `datasets`, `pandas` |
+| **Data** | `huggingface_hub`, `pandas` |
 | **Evaluation** | `scikit-learn`, `numpy` |
-| **LLM APIs** | `anthropic` for Claude, `openai` for the comparison path, `tiktoken` |
-| **Charts** | `matplotlib`, `seaborn` |
-| **Utilities** | `python-dotenv`, `tqdm`, `requests` |
+| **LLM APIs** | `anthropic` for Claude, `openai` for the comparison path |
+| **Charts** | `matplotlib` |
+| **Utilities** | `python-dotenv` |
 | **Tests** | `pytest` |
 
 <br>

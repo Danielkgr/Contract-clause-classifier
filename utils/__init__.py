@@ -12,7 +12,6 @@ _EXPORTS = {
     "evaluate_zero_shot": "evaluation",
     "evaluate_fine_tuned": "evaluation",
     "calculate_metrics": "metrics",
-    "calculate_latency": "metrics",
     "FineTunedClassifier": "classifier",
 }
 
