@@ -106,6 +106,20 @@ It scores every saved arm on the contracts they share and writes `comparison_rep
 
 CUAD contracts are long.  The median runs to 33,000 characters and the longest to 338,000, and the clauses sit throughout.  Across the 510 contracts there are 2,510 cases of a contract containing one of the 12 default clause types, and in only 5 of them does the clause begin within the first 512 characters.  Both arms therefore read the whole contract.
 
+Both arms answer the same question about the same 56 test contracts, and one shared evaluation scores them.
+
+```mermaid
+flowchart TD
+    cuad["CUAD v1: 510 contracts with answer spans"] --> split["Split by a stable hash of each title"]
+    split -->|"401 train, 53 validation"| train["Fine-tune RoBERTa on 512-token windows"]
+    split -->|"56 test"| zs["Zero-shot arm: Claude reads 24,000-character chunks"]
+    split -->|"56 test"| ft["Fine-tuned arm: the model scores every window"]
+    train --> ft
+    zs -->|"zero_shot results file"| evaluate["Shared evaluation: one answer per contract and clause type, scored against CUAD's labels"]
+    ft -->|"fine_tuned results file"| evaluate
+    evaluate --> report["Report: precision, recall, F1, accuracy, latency, and cost per contract"]
+```
+
 ### Pipeline
 
 | Stage | Code | What happens |
