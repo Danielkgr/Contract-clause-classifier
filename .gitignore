@@ -37,10 +37,7 @@ ENV/
 Thumbs.db
 
 # Data / Models / Outputs (generated or large)
-data/*.csv
 data/*.json
-data/*.parquet
-data/*.pq
 models/
 outputs/
 

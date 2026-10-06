@@ -224,6 +224,7 @@ class DataConfig:
     dataset_file: str = "CUAD_v1/CUAD_v1.json"
     max_samples: int | None = None  # Set None for full dataset
     clause_types: list = None
+    cuad_path: str | None = None  # a CUAD_v1.json to read instead of data/ or a download
 
     def __post_init__(self):
         if self.clause_types is None:
@@ -276,7 +277,7 @@ def load_config(env_file: os.PathLike | None = ENV_FILE) -> Config:
     return Config(
         llm=LLMConfig.from_env(os.environ),
         training=TrainingConfig.from_env(os.environ),
-        data=DataConfig(),
+        data=DataConfig(cuad_path=_setting(os.environ, "CUAD_PATH", None)),
         paths=Paths(),
     )
 

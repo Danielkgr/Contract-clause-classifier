@@ -154,3 +154,38 @@ def test_real_cuad_splits_and_spans():
             assert contract.clauses[ct] == bool(contract.spans[ct])
             for start, end in contract.spans[ct]:
                 assert contract.text[start:end] in answers[(contract.contract_id, ct)]
+
+
+def test_an_explicit_cuad_path_is_used(tmp_path):
+    from utils.data_loader import load_cuad_dataset
+
+    title = _title_in("test")
+    path = _write_cuad(tmp_path / "cuad.json", [(title, [("Text.", [("Insurance", True)])])])
+    [contract] = load_cuad_dataset("test", path=path, clause_types=["Insurance"])
+    assert contract.contract_id == title
+
+
+def test_a_missing_explicit_path_fails_instead_of_falling_back(tmp_path):
+    from utils.data_loader import load_cuad_dataset
+
+    with pytest.raises(FileNotFoundError, match="No CUAD file at"):
+        load_cuad_dataset("test", path=str(tmp_path / "absent.json"))
+
+
+def test_a_failed_download_says_where_to_put_the_file(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    from config import config
+    from utils.data_loader import cuad_json_path
+
+    def offline(**kwargs):
+        raise OSError("network unreachable")
+
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = offline
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    monkeypatch.setattr(config.paths, "data_dir", str(tmp_path))
+    monkeypatch.setattr(config.data, "cuad_path", None)
+    with pytest.raises(FileNotFoundError, match="data/CUAD_v1.json.*network unreachable"):
+        cuad_json_path()

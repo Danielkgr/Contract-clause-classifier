@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![102 tests](https://img.shields.io/badge/tests-102-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![105 tests](https://img.shields.io/badge/tests-105-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -41,7 +41,7 @@ CUAD contracts are long.  The median runs to 33,000 characters and the longest t
 
 | Stage | Code | What happens |
 |---|---|---|
-| **Load** | `load_cuad_dataset()` | Reads CUAD v1 (`CUAD_v1.json`) from `data/`, or downloads it from [Hugging Face](https://huggingface.co/datasets/theatticusproject/cuad).  CUAD has no splits, so each contract goes to train, validation, or test (401, 53, and 56 contracts) by a stable hash of its title.  If the download fails, it falls back to local CSV, JSON, or Parquet files in `data/`. |
+| **Load** | `load_cuad_dataset()` | Reads CUAD v1 (`CUAD_v1.json`) from `data/`, or downloads it from [Hugging Face](https://huggingface.co/datasets/theatticusproject/cuad).  CUAD has no splits, so each contract goes to train, validation, or test (401, 53, and 56 contracts) by a stable hash of its title.  `CUAD_PATH` or `--cuad` points it at another copy.  If no copy is found and the download fails, it stops with an error that says where to put the file. |
 | **Wrap** | `ContractData` | Holds each contract's title, its full text, whether each clause type is present, and the character offsets of every CUAD answer span. |
 | **Fine-tune** | `utils/classifier.py` | Trains one multi-label `roberta-base` model on overlapping windows of the training contracts, labelled from the answer spans. |
 | **Zero-shot** | `utils/anthropic_client.py` | Asks Claude which clause types appear in each chunk of the contract, through the official `anthropic` SDK, with a JSON answer.  `utils/openai_client.py` keeps an OpenAI path for comparison. |
@@ -206,6 +206,7 @@ The estimate counts calls and characters exactly from the run's own chunking.  T
 | `LLM_BASE_URL` | Optional | An OpenAI-compatible server, for Azure or Ollama for example.  `openai` provider only. |
 | `LLM_CHUNK_CHARS` | `24000` | Characters of contract per LLM call |
 | `LLM_CHUNK_OVERLAP` | `1000` | Characters shared by consecutive chunks |
+| `CUAD_PATH` | Unset | A `CUAD_v1.json` to read instead of `data/CUAD_v1.json` or a download |
 | `TRAIN_MODEL` | `roberta-base` | Hugging Face model to fine-tune |
 | `BATCH_SIZE` | `8` | Training and inference batch size |
 | `LR` | `2e-5` | Learning rate |
@@ -299,7 +300,7 @@ Contract-clause-classifier/
     evaluation.py            Contract-level evaluation of both arms, shared by the CLI and notebook
     metrics.py               ClassificationMetrics, InferenceStats, aggregation helpers
   tests/                     Loader, chunking, evaluation, prompt, cost, and client tests, plus a smoke test
-  data/                      Optional local copy of CUAD_v1.json, or fallback CSV, JSON, or Parquet
+  data/                      Optional local copy of CUAD_v1.json
   models/                    Saved fine-tuned checkpoints
   outputs/                   Results, created on the first run
   .cache/llm/                Cached LLM responses, created by the first zero-shot run
