@@ -70,3 +70,15 @@ def test_a_malformed_number_names_the_variable():
 def test_the_api_key_never_appears_in_the_config_repr():
     llm = LLMConfig.from_env({"LLM_API_KEY": "sk-ant-secret-value-1234"})
     assert "sk-ant-secret" not in repr(llm)
+
+
+def test_building_the_paths_creates_no_directories(tmp_path):
+    from config import Paths
+
+    paths = Paths(
+        data_dir=str(tmp_path / "data"),
+        outputs_dir=str(tmp_path / "outputs"),
+        models_dir=str(tmp_path / "models"),
+    )
+    assert paths.outputs_dir.endswith("outputs")
+    assert list(tmp_path.iterdir()) == []

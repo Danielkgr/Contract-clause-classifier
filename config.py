@@ -243,7 +243,7 @@ class DataConfig:
 
 @dataclass
 class Paths:
-    """Path configuration."""
+    """Path configuration.  Each directory is created when something is first written to it."""
 
     base_dir: str = os.path.dirname(os.path.abspath(__file__))
     data_dir: str = os.path.join(base_dir, "data")
@@ -251,9 +251,6 @@ class Paths:
     models_dir: str = os.path.join(base_dir, "models")
     notebook_dir: str = base_dir
 
-    def __post_init__(self):
-        for dir_path in [self.data_dir, self.outputs_dir, self.models_dir]:
-            os.makedirs(dir_path, exist_ok=True)
 
 
 @dataclass

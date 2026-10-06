@@ -26,7 +26,6 @@ from transformers import (
 from config import config
 from utils.chunking import window_labels
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
