@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) [![CI](https://img.shields.io/github/actions/workflow/status/Danielkgr/contract-clause-classifier/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/Danielkgr/contract-clause-classifier/actions/workflows/ci.yml) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![zero-shot arm measured](https://img.shields.io/badge/results-zero--shot_arm_only-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) [![CI](https://img.shields.io/github/actions/workflow/status/Danielkgr/contract-clause-classifier/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/Danielkgr/contract-clause-classifier/actions/workflows/ci.yml) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -21,15 +21,47 @@ An evaluation harness.  It fine-tunes a RoBERTa classifier, prompts an LLM zero-
 > [!IMPORTANT]
 > It is not a deployed classifier.  It does not serve predictions, store contracts, or ship a production model.
 
-It is a working prototype.  Its tests run every stage on stand-in models and a mocked API, which checks the plumbing and says nothing about accuracy.
+It is a working prototype.  Its tests run every stage on stand-in models and a mocked API, which checks the plumbing and says nothing about accuracy.  The zero-shot arm has been run once against the live API, and the fine-tuned arm has not been run.
 
 <br>
 
 ## Results
 
-No comparison run has been executed for this repository, so there are no figures here yet.  A full run fine-tunes RoBERTa on the 401 training contracts and sends the zero-shot arm to a paid LLM API.  When a run is complete, its artefacts (`comparison_metrics.csv`, `comparison_report.md`, and the plot) will be committed next to this README.
+One arm has been measured.  The zero-shot arm ran once on 6 October 2026 with `claude-opus-5-5` over all 56 CUAD test contracts.  **The fine-tuned arm has not been run**, because it needs a GPU, so the build-or-buy comparison the harness exists for is still open.
 
-Until then, the guidance in [Choosing between the two](#choosing-between-the-two) is qualitative.  It rests on the cost and latency profile of each approach rather than on anything this code has measured.
+| Measure, zero-shot `claude-opus-5-5`, multi-label | Value |
+|---|---|
+| Precision, macro average over the 12 clause types | 0.757 |
+| Recall, macro average | 0.934 |
+| F1, macro average | 0.818 |
+| Accuracy, macro average | 0.891 |
+| Calls | 130, none failed and none retried |
+| Average latency per contract | 7.1 seconds, from 1.3 to 35.2 |
+| Cost | $3.35 in total, $0.060 per contract |
+
+| Clause type | Precision | Recall | F1 | TP | FP | FN | TN |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Governing Law | 1.000 | 1.000 | 1.000 | 45 | 0 | 0 | 11 |
+| Anti-Assignment | 0.946 | 0.972 | 0.959 | 35 | 2 | 1 | 18 |
+| Cap On Liability | 0.889 | 0.667 | 0.762 | 16 | 2 | 8 | 30 |
+| Uncapped Liability | 0.391 | 1.000 | 0.563 | 9 | 14 | 0 | 33 |
+| Audit Rights | 0.850 | 0.944 | 0.895 | 17 | 3 | 1 | 35 |
+| Termination For Convenience | 0.741 | 0.952 | 0.833 | 20 | 7 | 1 | 28 |
+| Change Of Control | 0.409 | 1.000 | 0.581 | 9 | 13 | 0 | 34 |
+| Exclusivity | 0.667 | 0.875 | 0.757 | 14 | 7 | 2 | 33 |
+| Non-Compete | 0.714 | 1.000 | 0.833 | 10 | 4 | 0 | 42 |
+| Insurance | 0.950 | 1.000 | 0.974 | 19 | 1 | 0 | 36 |
+| License Grant | 0.862 | 1.000 | 0.926 | 25 | 4 | 0 | 27 |
+| Warranty Duration | 0.667 | 0.800 | 0.727 | 4 | 2 | 1 | 49 |
+
+The model finds most clauses that are there and over-reports some that are not.  It missed 14 of 237 labelled clauses, 8 of them caps on liability.  Almost half of its 59 false positives fall in two types, 14 for Uncapped Liability and 13 for Change Of Control, where it reported a clause in a contract that CUAD's annotators did not mark.  Nobody has yet read those contracts to say whether the model or the label is right, and some of the gap may be how narrowly CUAD defines each type.
+
+> [!IMPORTANT]
+> These numbers are one run of one prompt at `low` effort on 56 contracts, so one contract moves a rare type's precision or recall by several points, and no interval is reported.  The cost is computed from each response's usage at list prices in `utils/pricing.py`, and the invoice is the authority.  The estimate before the run, from `compare_classifiers.py estimate`, was $3.15.
+
+The run's artefacts sit in `outputs/`.  `zero_shot-claude-opus-5-5-multi.json` holds every contract's labels, predictions, latency, cost, and token counts, and `comparison_report.md`, `summary.md`, `comparison_metrics.csv`, and `comparison_plot.png` were written from it by `compare_classifiers.py compare`.  [outputs/PROVENANCE.md](outputs/PROVENANCE.md) records how the run was made, and the console output is in `eval-logs/`.
+
+The guidance in [Choosing between the two](#choosing-between-the-two) is still qualitative, because the fine-tuned arm it compares against has not been measured.
 
 <br>
 
@@ -98,7 +130,7 @@ It trains on the 401 training contracts, checks progress against the 53 validati
 python compare_classifiers.py compare
 ```
 
-It scores every saved arm on the contracts they share and writes `comparison_report.md`, `summary.md`, `comparison_metrics.csv`, and `comparison_plot.png` to `outputs/`.  Those are the files the Results section will cite.
+It scores every saved arm on the contracts they share and writes `comparison_report.md`, `summary.md`, `comparison_metrics.csv`, and `comparison_plot.png` to `outputs/`.  Those are the files the Results section cites.
 
 <br>
 
@@ -158,7 +190,7 @@ A failed call is never read as absent.  If no chunk's answer lists a clause type
 > [!NOTE]
 > The harness does not turn on Anthropic's server-side fallbacks.  A fallback would let a different model answer a refused request without that showing in the results, so a refusal is recorded as its own outcome instead.
 
-The definitions come first in each request and are marked for prompt caching.  The API caches them only once they reach the model's minimum cacheable length, which is 512 tokens for Opus 5.5 and Sonnet 5.5 and 4,096 for Haiku 4.5.  With the 12 default clause types the system prompt is about 1,400 characters, roughly 350 tokens, so expect no cache reads at the defaults.  Each call records the cache reads that the API reports in its usage.
+The definitions come first in each request and are marked for prompt caching.  The API caches them only once they reach the model's minimum cacheable length, which is 512 tokens for Opus 5.5 and Sonnet 5.5 and 4,096 for Haiku 4.5.  With the 12 default clause types the system prompt is about 1,400 characters, roughly 350 tokens, which suggested there would be no cache reads at the defaults.  The live run says otherwise.  Its 130 calls recorded 99,792 cache read tokens and 3,168 cache write tokens, so the prefix the API counts is longer than the system prompt alone.  Each call records the cache reads that the API reports in its usage.
 
 | Safeguard | What it does |
 |---|---|
@@ -172,7 +204,7 @@ Both arms are timed per contract.  For the LLM, that is the sum of its calls, an
 
 ### Choosing between the two
 
-These are the trade-offs the report is built to test.  Until a run is published they are expectations, not findings.
+These are the trade-offs the report is built to test.  The zero-shot column's cost and latency are now measured, at $0.060 and about 7 seconds per contract, but the fine-tuned arm has not been run, so the comparison itself is still an expectation, not a finding.
 
 | Consideration | Zero-shot LLM | Fine-tuned model |
 |---|---|---|
