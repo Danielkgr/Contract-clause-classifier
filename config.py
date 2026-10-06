@@ -7,9 +7,10 @@ already set in the environment takes precedence over the same one in .env.
 """
 
 import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Optional, TypeVar
+from typing import TypeVar
 
 from dotenv import load_dotenv
 
@@ -35,51 +36,51 @@ def _setting(env: Mapping[str, str], name: str, default: T, kind: Callable[[str]
         raise ValueError(f"{name} must be {expected}, got {raw!r}") from None
 
 
+# The model used when LLM_MODEL is not set
+DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "openai": "gpt-4o-mini"}
+
+
 @dataclass
 class LLMConfig:
-    """LLM provider configuration."""
+    """Zero-shot LLM settings."""
 
-    provider: str = "openai"
-    model: str = "gpt-3.5-turbo"
-    api_key: Optional[str] = field(default=None, repr=False)  # never printed
-    base_url: Optional[str] = None
-    temperature: float = 0.0
-    max_tokens: int = 500
+    provider: str = "anthropic"  # "anthropic" or "openai"
+    model: str | None = None  # None means the provider's default model
+    api_key: str | None = field(default=None, repr=False)  # never printed
+    base_url: str | None = None  # an OpenAI-compatible server, openai provider only
+    temperature: float | None = None  # sent only when set
+    # A cap, not a charge: output is billed as used.  It leaves room for the
+    # thinking that claude-opus-5-5 always does before its short JSON answer.
+    max_tokens: int = 2048
+    effort: str = "low"  # thinking depth for Claude models that take it
+    mode: str = "multi"  # "multi" asks about every clause type per call, "single" one
+    timeout: float = 120.0  # seconds to wait for one response
     # Contracts are sent in chunks that fit the model's context window.  The
     # overlap keeps a clause that straddles a boundary whole in one chunk.
     chunk_chars: int = 24000
     chunk_overlap: int = 1000
 
-    # List price per million tokens (input, output) in USD.
-    # Source: https://openai.com/api/pricing  Check before relying on costs.
-    COSTS = {
-        "gpt-3.5-turbo": (0.50, 1.50),
-        "gpt-3.5-turbo-16k": (3.00, 4.00),
-        "gpt-4": (30.00, 60.00),
-        "gpt-4-turbo": (10.00, 30.00),
-        "gpt-4o": (2.50, 10.00),
-        "gpt-4o-mini": (0.15, 0.60),
-    }
-    # Used, with a warning, for any model not listed in COSTS
-    DEFAULT_COST_PER_MILLION = (1.00, 2.00)
+    @property
+    def resolved_model(self) -> str:
+        """The model to call: LLM_MODEL, or the provider's default."""
+        return self.model or DEFAULT_MODELS.get(self.provider, "")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "LLMConfig":
         """Build the settings from environment variables, falling back to the defaults."""
         return cls(
             provider=_setting(env, "LLM_PROVIDER", cls.provider),
-            model=_setting(env, "LLM_MODEL", cls.model),
+            model=_setting(env, "LLM_MODEL", None),
             api_key=_setting(env, "LLM_API_KEY", None),
             base_url=_setting(env, "LLM_BASE_URL", None),
-            temperature=_setting(env, "LLM_TEMPERATURE", cls.temperature, float),
+            temperature=_setting(env, "LLM_TEMPERATURE", None, float),
             max_tokens=_setting(env, "LLM_MAX_TOKENS", cls.max_tokens, int),
+            effort=_setting(env, "LLM_EFFORT", cls.effort),
+            mode=_setting(env, "LLM_MODE", cls.mode),
+            timeout=_setting(env, "LLM_TIMEOUT", cls.timeout, float),
             chunk_chars=_setting(env, "LLM_CHUNK_CHARS", cls.chunk_chars, int),
             chunk_overlap=_setting(env, "LLM_CHUNK_OVERLAP", cls.chunk_overlap, int),
         )
-
-    def get_cost_per_million(self, model: Optional[str] = None) -> tuple:
-        """Get cost per million tokens (input, output) for a model."""
-        return self.COSTS.get(model or self.model, self.DEFAULT_COST_PER_MILLION)
 
 
 @dataclass
@@ -103,7 +104,7 @@ class TrainingConfig:
     threshold: float = 0.5
     # USD per hour for the machine running inference.  Unset means the
     # fine-tuned arm reports measured compute time and no cost.
-    cost_per_hour: Optional[float] = None
+    cost_per_hour: float | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "TrainingConfig":
@@ -129,20 +130,47 @@ class TrainingConfig:
 
 # The 41 CUAD v1 categories, spelled as they appear in CUAD_v1.json
 CUAD_CATEGORIES = [
-    "Document Name", "Parties", "Agreement Date", "Effective Date",
-    "Expiration Date", "Renewal Term", "Notice Period To Terminate Renewal",
-    "Governing Law", "Most Favored Nation", "Non-Compete", "Exclusivity",
-    "No-Solicit Of Customers", "Competitive Restriction Exception",
-    "No-Solicit Of Employees", "Non-Disparagement", "Termination For Convenience",
-    "Rofr/Rofo/Rofn", "Change Of Control", "Anti-Assignment",
-    "Revenue/Profit Sharing", "Price Restrictions", "Minimum Commitment",
-    "Volume Restriction", "Ip Ownership Assignment", "Joint Ip Ownership",
-    "License Grant", "Non-Transferable License", "Affiliate License-Licensor",
-    "Affiliate License-Licensee", "Unlimited/All-You-Can-Eat-License",
-    "Irrevocable Or Perpetual License", "Source Code Escrow",
-    "Post-Termination Services", "Audit Rights", "Uncapped Liability",
-    "Cap On Liability", "Liquidated Damages", "Warranty Duration", "Insurance",
-    "Covenant Not To Sue", "Third Party Beneficiary",
+    "Document Name",
+    "Parties",
+    "Agreement Date",
+    "Effective Date",
+    "Expiration Date",
+    "Renewal Term",
+    "Notice Period To Terminate Renewal",
+    "Governing Law",
+    "Most Favored Nation",
+    "Non-Compete",
+    "Exclusivity",
+    "No-Solicit Of Customers",
+    "Competitive Restriction Exception",
+    "No-Solicit Of Employees",
+    "Non-Disparagement",
+    "Termination For Convenience",
+    "Rofr/Rofo/Rofn",
+    "Change Of Control",
+    "Anti-Assignment",
+    "Revenue/Profit Sharing",
+    "Price Restrictions",
+    "Minimum Commitment",
+    "Volume Restriction",
+    "Ip Ownership Assignment",
+    "Joint Ip Ownership",
+    "License Grant",
+    "Non-Transferable License",
+    "Affiliate License-Licensor",
+    "Affiliate License-Licensee",
+    "Unlimited/All-You-Can-Eat-License",
+    "Irrevocable Or Perpetual License",
+    "Source Code Escrow",
+    "Post-Termination Services",
+    "Audit Rights",
+    "Uncapped Liability",
+    "Cap On Liability",
+    "Liquidated Damages",
+    "Warranty Duration",
+    "Insurance",
+    "Covenant Not To Sue",
+    "Third Party Beneficiary",
 ]
 
 # Default clause types, a mix of common and rarer CUAD categories
@@ -167,7 +195,7 @@ def is_cuad_category(name: str) -> bool:
     return name.casefold() in {c.casefold() for c in CUAD_CATEGORIES}
 
 
-def mask_secret(value: Optional[str]) -> str:
+def mask_secret(value: str | None) -> str:
     """Show a secret such as an API key without revealing it.
 
     At most the last four characters are shown, and none of a value shorter
@@ -183,10 +211,11 @@ def mask_secret(value: Optional[str]) -> str:
 @dataclass
 class DataConfig:
     """Data configuration."""
+
     # CUAD v1 in SQuAD 2.0 format, from https://huggingface.co/datasets/theatticusproject/cuad
     dataset_repo: str = "theatticusproject/cuad"
     dataset_file: str = "CUAD_v1/CUAD_v1.json"
-    max_samples: Optional[int] = None  # Set None for full dataset
+    max_samples: int | None = None  # Set None for full dataset
     clause_types: list = None
 
     def __post_init__(self):
@@ -207,12 +236,13 @@ class DataConfig:
 @dataclass
 class Paths:
     """Path configuration."""
+
     base_dir: str = os.path.dirname(os.path.abspath(__file__))
     data_dir: str = os.path.join(base_dir, "data")
     outputs_dir: str = os.path.join(base_dir, "outputs")
     models_dir: str = os.path.join(base_dir, "models")
     notebook_dir: str = base_dir
-    
+
     def __post_init__(self):
         for dir_path in [self.data_dir, self.outputs_dir, self.models_dir]:
             os.makedirs(dir_path, exist_ok=True)
@@ -228,7 +258,7 @@ class Config:
     paths: Paths
 
 
-def load_config(env_file: Optional[os.PathLike] = ENV_FILE) -> Config:
+def load_config(env_file: os.PathLike | None = ENV_FILE) -> Config:
     """Build the configuration from .env and the environment.
 
     The .env file is optional.  A variable already set in the environment,

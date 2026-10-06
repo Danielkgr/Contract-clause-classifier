@@ -7,12 +7,11 @@ not pull in torch and transformers through utils.classifier.
 import importlib
 
 _EXPORTS = {
-    "LLMClient": "llm_client",
+    "make_client": "llm_client",
     "load_cuad_dataset": "data_loader",
     "evaluate_zero_shot": "evaluation",
     "evaluate_fine_tuned": "evaluation",
     "calculate_metrics": "metrics",
-    "calculate_cost": "metrics",
     "calculate_latency": "metrics",
     "FineTunedClassifier": "classifier",
 }

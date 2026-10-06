@@ -4,67 +4,121 @@ import pytest
 
 from utils.data_loader import ContractData
 from utils.evaluation import evaluate_fine_tuned, evaluate_zero_shot
-from utils.llm_client import LLMResponse
+from utils.llm_client import LLMResponse, Usage
 
 FILLER = "The parties agree as follows. " * 2000  # about 60,000 characters
+CHUNKING = {"chunk_chars": 10_000, "chunk_overlap": 500}
 
 
-def _contract(cid, clauses, tail=""):
-    return ContractData(contract_id=cid, text=FILLER + tail, clauses=clauses)
+def _contract(cid, clauses, tail="", head=""):
+    return ContractData(contract_id=cid, text=head + FILLER + tail, clauses=clauses)
 
 
 class StubLLM:
-    """Says YES when the chunk holds the marker for the clause type."""
+    """Finds a clause type when the excerpt holds its marker, such as [Insurance].
+
+    A call fails when it asks about a type in fail_for, or when the excerpt
+    holds the marker [FAIL].
+    """
+
+    provider, model = "stub", "stub-model"
 
     def __init__(self, fail_for=()):
         self.fail_for = set(fail_for)
         self.calls = []
 
-    def classify_single(self, text, clause_type):
-        self.calls.append((clause_type, len(text)))
-        if clause_type in self.fail_for:
-            return LLMResponse("", 0, 0, 5.0, 0.0, error="timeout")
-        answer = "YES" if f"[{clause_type}]" in text else "NO"
-        return LLMResponse(answer, 100, 1, 10.0, 0.001)
+    def classify(self, excerpt, clause_types):
+        self.calls.append(tuple(clause_types))
+        if self.fail_for & set(clause_types) or "[FAIL]" in excerpt:
+            return LLMResponse(None, "error", error="timeout", latency_ms=5.0, cost_usd=0.0)
+        present = frozenset(ct for ct in clause_types if f"[{ct}]" in excerpt)
+        return LLMResponse(present, "ok", usage=Usage(100, 1), latency_ms=10.0, cost_usd=0.001)
 
 
-def test_zero_shot_reads_past_the_opening_of_the_contract():
+@pytest.mark.parametrize("mode", ["multi", "single"])
+def test_zero_shot_reads_past_the_opening_of_the_contract(mode):
     contracts = [
         _contract("a", {"Governing Law": True}, tail="[Governing Law] Victoria."),
         _contract("b", {"Governing Law": False}),
     ]
-    result = evaluate_zero_shot(StubLLM(), contracts, ["Governing Law"],
-                                chunk_chars=10_000, chunk_overlap=500)
+    result = evaluate_zero_shot(StubLLM(), contracts, ["Governing Law"], mode=mode, **CHUNKING)
     assert result.predictions["Governing Law"] == [1, 0]
     assert result.metrics["Governing Law"].f1 == 1.0
 
 
-def test_zero_shot_stops_at_the_first_yes():
+def test_multi_label_asks_once_per_chunk_about_every_clause_type():
     client = StubLLM()
-    contract = ContractData("a", "[Insurance] cover. " + FILLER, {"Insurance": True})
-    evaluate_zero_shot(client, [contract], ["Insurance"], chunk_chars=10_000, chunk_overlap=500)
+    types = ["Governing Law", "Insurance", "Exclusivity"]
+    contract = _contract("a", {}, head="[Insurance] cover. ", tail="[Governing Law] Victoria.")
+    result = evaluate_zero_shot(client, [contract], types, mode="multi", **CHUNKING)
+    assert result.calls == len(client.calls) > 1
+    assert all(asked == tuple(types) for asked in client.calls)
+    # The contract's answer is the union over its chunks
+    assert result.contracts[0].predictions == {"Governing Law": 1, "Insurance": 1, "Exclusivity": 0}
+
+
+def test_multi_label_needs_fewer_calls_than_single_label():
+    types = ["Governing Law", "Insurance", "Exclusivity"]
+    contract = _contract("a", {})
+    multi = evaluate_zero_shot(StubLLM(), [contract], types, mode="multi", **CHUNKING)
+    single = evaluate_zero_shot(StubLLM(), [contract], types, mode="single", **CHUNKING)
+    assert single.calls == multi.calls * len(types)
+
+
+def test_single_label_stops_at_the_first_chunk_with_the_clause():
+    client = StubLLM()
+    contract = _contract("a", {"Insurance": True}, head="[Insurance] cover. ")
+    evaluate_zero_shot(client, [contract], ["Insurance"], mode="single", **CHUNKING)
     assert len(client.calls) == 1
 
 
-def test_zero_shot_latency_and_cost_are_summed_per_contract():
+@pytest.mark.parametrize("mode", ["multi", "single"])
+def test_a_failed_chunk_makes_a_clause_unknown_not_absent(mode):
+    contract = _contract(
+        "a", {"Insurance": True, "Exclusivity": False}, head="[FAIL] ", tail="[Insurance] cover."
+    )
+    result = evaluate_zero_shot(
+        StubLLM(), [contract], ["Insurance", "Exclusivity"], mode=mode, **CHUNKING
+    )
+    # Found in a later chunk despite the failed one, so present
+    assert result.contracts[0].predictions["Insurance"] == 1
+    # Not found, but the failed chunk might have held it, so unknown
+    assert result.contracts[0].predictions["Exclusivity"] is None
+    assert result.failures == {"Insurance": 0, "Exclusivity": 1}
+    assert "Exclusivity" not in result.metrics
+    assert result.outcomes["error"] >= 1
+
+
+@pytest.mark.parametrize("mode", ["multi", "single"])
+def test_zero_shot_latency_and_cost_are_summed_per_contract(mode):
     contract = _contract("a", {"Insurance": False})
-    result = evaluate_zero_shot(StubLLM(), [contract], ["Insurance"],
-                                chunk_chars=10_000, chunk_overlap=500)
+    result = evaluate_zero_shot(StubLLM(), [contract], ["Insurance"], mode=mode, **CHUNKING)
     calls = result.calls
     assert calls > 1
     assert result.stats.documents == 1
     assert result.stats.avg_latency_ms == pytest.approx(10.0 * calls)
     assert result.stats.avg_cost_usd == pytest.approx(0.001 * calls)
     assert result.stats.input_tokens == 100 * calls
+    assert result.settings["mode"] == mode
 
 
 def test_failed_calls_are_left_out_and_counted():
     contracts = [_contract("a", {"Insurance": True, "Exclusivity": False})]
-    result = evaluate_zero_shot(StubLLM(fail_for={"Insurance"}), contracts,
-                                ["Insurance", "Exclusivity"], chunk_chars=10_000, chunk_overlap=500)
+    result = evaluate_zero_shot(
+        StubLLM(fail_for={"Insurance"}),
+        contracts,
+        ["Insurance", "Exclusivity"],
+        mode="single",
+        **CHUNKING,
+    )
     assert result.failures == {"Insurance": 1, "Exclusivity": 0}
     assert "Insurance" not in result.metrics
     assert result.predictions["Exclusivity"] == [0]
+
+
+def test_an_unknown_mode_is_refused():
+    with pytest.raises(ValueError, match="mode"):
+        evaluate_zero_shot(StubLLM(), [], ["Insurance"], mode="batch")
 
 
 class StubClassifier:
@@ -80,8 +134,9 @@ class StubClassifier:
 
 def test_fine_tuned_is_unpriced_without_a_rate():
     contracts = [_contract("a", {"Governing Law": True}), _contract("b", {"Governing Law": False})]
-    clf = StubClassifier([{"Governing Law": 0.9, "Insurance": 0.1},
-                          {"Governing Law": 0.2, "Insurance": 0.1}])
+    clf = StubClassifier(
+        [{"Governing Law": 0.9, "Insurance": 0.1}, {"Governing Law": 0.2, "Insurance": 0.1}]
+    )
     result = evaluate_fine_tuned(clf, contracts, ["Governing Law"], threshold=0.5)
     assert result.predictions["Governing Law"] == [1, 0]
     assert result.stats.avg_latency_ms == 40.0

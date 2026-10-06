@@ -10,8 +10,6 @@ from sklearn.metrics import (
     classification_report, confusion_matrix
 )
 
-from config import config
-
 
 @dataclass
 class ClassificationMetrics:
@@ -121,30 +119,6 @@ def calculate_metrics(
         print(f"  TN: {metrics.true_negatives}, FN: {metrics.false_negatives}")
     
     return metrics
-
-
-def calculate_cost(
-    input_tokens: int,
-    output_tokens: int,
-    model: Optional[str] = None
-) -> float:
-    """Calculate API cost for LLM inference.
-    
-    Args:
-        input_tokens: Number of input tokens
-        output_tokens: Number of output tokens
-        model: Model name (uses config if None)
-        
-    Returns:
-        Cost in USD
-    """
-    model = model or config.llm.model
-    cost_per_million = config.llm.get_cost_per_million(model)
-    
-    input_cost = (input_tokens / 1_000_000) * cost_per_million[0]
-    output_cost = (output_tokens / 1_000_000) * cost_per_million[1]
-    
-    return input_cost + output_cost
 
 
 def calculate_latency(

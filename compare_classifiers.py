@@ -31,11 +31,13 @@ from rich.table import Table
 from rich.tree import Tree
 
 from config import config, DEFAULT_CLAUSE_TYPES, is_cuad_category, mask_secret
-from utils.llm_client import LLMClient
+from utils.llm_client import FatalLLMError, make_client
+from utils.pricing import price_for
 from utils.data_loader import load_cuad_dataset, get_clause_distribution
 from utils.classifier import FineTunedClassifier, TrainingResult
 from utils.evaluation import ArmResult, evaluate_zero_shot, evaluate_fine_tuned
 from utils.metrics import aggregate_metrics
+from utils.prompts import PROMPT_VERSION
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,12 +122,12 @@ def _configure_llm_settings():
     provider = Prompt.ask(
         "  [cyan]1[/]. Provider",
         default=config.llm.provider,
-        choices=["openai", "anthropic", "google", "custom"],
+        choices=["anthropic", "openai"],
     )
     config.llm.provider = provider
 
     # Model
-    model = Prompt.ask("  [cyan]2[/]. Model name", default=config.llm.model)
+    model = Prompt.ask("  [cyan]2[/]. Model name", default=config.llm.resolved_model)
     config.llm.model = model
 
     # API key: typed without echo, never shown, and kept when left blank
@@ -143,9 +145,12 @@ def _configure_llm_settings():
     config.llm.base_url = base_url if base_url != "(none)" else None
 
     # Temperature
-    temp_str = Prompt.ask("  [cyan]5[/]. Temperature", default=str(config.llm.temperature))
+    temp_str = Prompt.ask(
+        "  [cyan]5[/]. Temperature (blank leaves it unset)",
+        default="" if config.llm.temperature is None else str(config.llm.temperature),
+    )
     try:
-        config.llm.temperature = float(temp_str)
+        config.llm.temperature = float(temp_str) if temp_str.strip() else None
     except ValueError:
         console.print("  [yellow]Invalid temperature; keeping previous value.[/]")
 
@@ -157,10 +162,10 @@ def _configure_llm_settings():
         console.print("  [yellow]Invalid max tokens; keeping previous value.[/]")
 
     # Price lookup for the chosen model
-    if config.llm.model in config.llm.COSTS:
+    if price_for(config.llm.resolved_model) is not None:
         console.print("  [green]✓ Listed price found for this model[/]")
     else:
-        console.print("  [yellow]No listed price for this model, so costs use the default rate.[/]")
+        console.print("  [yellow]No listed price for this model, so its cost is reported as not priced.[/]")
 
 
 def _configure_training_settings():
@@ -361,10 +366,12 @@ def _show_environment():
     table.add_column("Value", style="green")
     for row in [
         ("LLM_PROVIDER", config.llm.provider),
-        ("LLM_MODEL", config.llm.model),
+        ("LLM_MODEL", config.llm.resolved_model),
+        ("LLM_MODE", config.llm.mode),
+        ("LLM_EFFORT", config.llm.effort),
         ("LLM_API_KEY", mask_secret(config.llm.api_key)),
         ("LLM_BASE_URL", config.llm.base_url or ""),
-        ("LLM_TEMPERATURE", str(config.llm.temperature)),
+        ("LLM_TEMPERATURE", "" if config.llm.temperature is None else str(config.llm.temperature)),
         ("LLM_MAX_TOKENS", str(config.llm.max_tokens)),
         ("TRAIN_MODEL", config.training.model_name),
         ("BATCH_SIZE", str(config.training.batch_size)),
@@ -392,10 +399,12 @@ def _view_config():
 
     rows = [
         ("LLM", "Provider", config.llm.provider),
-        ("LLM", "Model", config.llm.model),
+        ("LLM", "Model", config.llm.resolved_model),
+        ("LLM", "Prompt mode", config.llm.mode),
+        ("LLM", "Effort", config.llm.effort),
         ("LLM", "API Key", mask_secret(config.llm.api_key)),
         ("LLM", "Base URL", config.llm.base_url or "(none)"),
-        ("LLM", "Temperature", str(config.llm.temperature)),
+        ("LLM", "Temperature", "unset" if config.llm.temperature is None else str(config.llm.temperature)),
         ("LLM", "Max Tokens", str(config.llm.max_tokens)),
         ("Training", "Model", config.training.model_name),
         ("Training", "Epochs", str(config.training.num_epochs)),
@@ -559,9 +568,14 @@ def _run_comparison(
 
     console.print()
     console.print("[cyan]Evaluating the zero-shot LLM…[/]")
-    zero_shot = evaluate_zero_shot(
-        LLMClient(), contracts, clause_types, on_contract=_progress("Zero-shot"),
-    )
+    try:
+        zero_shot = evaluate_zero_shot(
+            make_client(config.llm), contracts, clause_types, mode=config.llm.mode,
+            on_contract=_progress("Zero-shot"),
+        )
+    except (FatalLLMError, ValueError) as e:
+        console.print(f"[red]The zero-shot run stopped: {e}[/]")
+        return None
     for ct, n in zero_shot.failures.items():
         if n:
             console.print(f"[yellow]  {n} of {len(contracts)} contracts had a failed call for "
@@ -640,7 +654,7 @@ def _notes(result: "ComparisonResult") -> str:
     if not result.zero_shot.metrics:
         notes.append("Every zero-shot LLM call failed, so that arm has no result.  Check the "
                      "provider, model, and API key.")
-    elif result.fine_tuned.stats.avg_cost_usd is None:
+    elif result.fine_tuned is not None and result.fine_tuned.stats.avg_cost_usd is None:
         notes.append("The fine-tuned arm is not priced.  Its latency is measured compute time, "
                      "and FT_COST_PER_HOUR turns that time into a cost.")
     failed = {ct: n for ct, n in result.zero_shot.failures.items() if n}
@@ -678,7 +692,8 @@ def _save_report(result: "ComparisonResult"):
                        f"{m.accuracy:.4f} | {m.true_positives} | {m.false_positives} | "
                        f"{m.true_negatives} | {m.false_negatives} |\n")
     md += (f"\n## Configuration\n\n"
-           f"- Zero-shot: {config.llm.provider}/{config.llm.model}, chunks of "
+           f"- Zero-shot: {config.llm.provider}/{config.llm.resolved_model}, {config.llm.mode}-label prompt "
+           f"version {PROMPT_VERSION}, chunks of "
            f"{config.llm.chunk_chars} characters overlapping by {config.llm.chunk_overlap}\n"
            f"- Fine-tuned: {config.training.model_name}, windows of {config.training.max_length} "
            f"tokens with a stride of {config.training.window_stride}, threshold "

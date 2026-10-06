@@ -6,95 +6,207 @@ clause appears anywhere in the contract, so both are scored against the same
 CUAD labels.  Latency and cost are measured per contract.
 """
 
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Any
 
 from config import config
 from utils.chunking import char_chunks
 from utils.metrics import (
-    ClassificationMetrics, InferenceStats, calculate_metrics, summarise_documents,
+    ClassificationMetrics,
+    InferenceStats,
+    calculate_metrics,
+    summarise_documents,
 )
+from utils.prompts import MODES, PROMPT_VERSION
+
+
+@dataclass
+class ContractResult:
+    """One contract's labels, predictions, and measured cost."""
+
+    contract_id: str
+    labels: dict[str, int]
+    # 1 present, 0 absent, or None when a failed call left the answer unknown
+    predictions: dict[str, int | None]
+    latency_ms: float = 0.0
+    cost_usd: float | None = None  # None when not priced
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    outcomes: dict[str, int] = field(default_factory=dict)  # call outcome -> count
 
 
 @dataclass
 class ArmResult:
     """What one arm produced on the test contracts."""
-    metrics: Dict[str, ClassificationMetrics]
-    stats: InferenceStats
-    predictions: Dict[str, List[int]]
-    labels: Dict[str, List[int]]
-    # Contract and clause-type decisions left out because an LLM call failed
-    failures: Dict[str, int] = field(default_factory=dict)
-    calls: int = 0
-    model: str = ""
+
+    arm: str  # "zero_shot" or "fine_tuned"
+    model: str
+    clause_types: list[str]
+    contracts: list[ContractResult]
+    settings: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def predictions(self) -> dict[str, list[int]]:
+        """Decisions per clause type, leaving out those that failed calls left unknown."""
+        return {
+            ct: [c.predictions[ct] for c in self.contracts if c.predictions.get(ct) is not None]
+            for ct in self.clause_types
+        }
+
+    @property
+    def labels(self) -> dict[str, list[int]]:
+        """Labels per clause type, aligned with predictions."""
+        return {
+            ct: [c.labels[ct] for c in self.contracts if c.predictions.get(ct) is not None]
+            for ct in self.clause_types
+        }
+
+    @property
+    def failures(self) -> dict[str, int]:
+        """Contracts per clause type left out because failed calls left the answer unknown."""
+        return {
+            ct: sum(1 for c in self.contracts if c.predictions.get(ct) is None)
+            for ct in self.clause_types
+        }
+
+    @property
+    def metrics(self) -> dict[str, ClassificationMetrics]:
+        labels, predictions = self.labels, self.predictions
+        return {
+            ct: calculate_metrics(labels[ct], predictions[ct])
+            for ct in self.clause_types
+            if predictions[ct]
+        }
+
+    @property
+    def stats(self) -> InferenceStats:
+        costs = [c.cost_usd for c in self.contracts]
+        return summarise_documents(
+            [c.latency_ms for c in self.contracts],
+            None if any(cost is None for cost in costs) else costs,
+            sum(
+                c.input_tokens + c.cache_read_tokens + c.cache_write_tokens for c in self.contracts
+            ),
+            sum(c.output_tokens for c in self.contracts),
+        )
+
+    @property
+    def calls(self) -> int:
+        return sum(c.calls for c in self.contracts)
+
+    @property
+    def outcomes(self) -> dict[str, int]:
+        """How every call ended, counted across the contracts."""
+        total: Counter = Counter()
+        for contract in self.contracts:
+            total.update(contract.outcomes)
+        return dict(total)
 
 
-def _score(labels: Dict[str, List[int]], predictions: Dict[str, List[int]]
-           ) -> Dict[str, ClassificationMetrics]:
-    return {ct: calculate_metrics(labels[ct], predictions[ct])
-            for ct in predictions if predictions[ct]}
+def _labels(contract, clause_types: Sequence[str]) -> dict[str, int]:
+    return {ct: int(contract.clauses.get(ct, False)) for ct in clause_types}
+
+
+def _union(responses, clause_types: Sequence[str]) -> dict[str, int | None]:
+    """Contract-level answers from the answers about its chunks.
+
+    A clause type is present when any chunk has it.  Otherwise a failed chunk
+    makes it unknown, because that chunk might have held it.
+    """
+    found = set().union(*(r.present for r in responses if r.present is not None))
+    failed = any(r.present is None for r in responses)
+    return {ct: 1 if ct in found else (None if failed else 0) for ct in clause_types}
+
+
+def _contract_result(contract, clause_types, predictions, responses) -> ContractResult:
+    costs = [r.cost_usd for r in responses]
+    return ContractResult(
+        contract_id=contract.contract_id,
+        labels=_labels(contract, clause_types),
+        predictions=predictions,
+        latency_ms=sum(r.latency_ms for r in responses),
+        cost_usd=None if any(cost is None for cost in costs) else sum(costs),
+        calls=len(responses),
+        input_tokens=sum(r.usage.input_tokens for r in responses),
+        output_tokens=sum(r.usage.output_tokens for r in responses),
+        cache_read_tokens=sum(r.usage.cache_read_tokens for r in responses),
+        cache_write_tokens=sum(r.usage.cache_write_tokens for r in responses),
+        outcomes=dict(Counter(r.outcome for r in responses)),
+    )
+
+
+def _ask_multi(client, chunks, clause_types):
+    """Every clause type in one call per chunk."""
+    responses = [client.classify(chunk, clause_types) for chunk in chunks]
+    return _union(responses, clause_types), responses
+
+
+def _ask_single(client, chunks, clause_types):
+    """One clause type per call, moving to the next type at the first chunk that has it."""
+    predictions, responses = {}, []
+    for ct in clause_types:
+        asked = []
+        for chunk in chunks:
+            asked.append(client.classify(chunk, [ct]))
+            if asked[-1].present is not None and ct in asked[-1].present:
+                break
+        predictions[ct] = _union(asked, [ct])[ct]
+        responses.extend(asked)
+    return predictions, responses
 
 
 def evaluate_zero_shot(
     client,
     contracts,
     clause_types: Sequence[str],
-    chunk_chars: Optional[int] = None,
-    chunk_overlap: Optional[int] = None,
-    on_contract: Optional[Callable[[int, int], None]] = None,
+    mode: str = "multi",
+    chunk_chars: int | None = None,
+    chunk_overlap: int | None = None,
+    on_contract: Callable[[int, int], None] | None = None,
 ) -> ArmResult:
-    """Ask the LLM about each clause type, one contract chunk at a time.
+    """Ask the LLM about every chunk of each contract.
 
-    A clause is present when any chunk gets YES, so later chunks are skipped
-    after the first YES.  If a call fails before a YES, the decision for that
-    contract and clause type is left out and counted in failures, rather than
-    scored as NO.  Latency and cost per contract are the sums over its calls.
+    In multi-label mode each chunk is one call about every clause type.  In
+    single-label mode each call is about one clause type, and the remaining
+    chunks are skipped for that type once one chunk has it.  Either way a
+    clause is present in a contract when any chunk has it.  When no chunk has
+    it and a call failed, the answer is unknown, so that contract and clause
+    type are left out of the metrics and counted in failures rather than
+    scored as absent.  Latency and cost per contract are the sums over its
+    calls.
     """
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     chunk_chars = chunk_chars or config.llm.chunk_chars
     chunk_overlap = config.llm.chunk_overlap if chunk_overlap is None else chunk_overlap
+    ask = _ask_multi if mode == "multi" else _ask_single
 
-    predictions = {ct: [] for ct in clause_types}
-    labels = {ct: [] for ct in clause_types}
-    failures = {ct: 0 for ct in clause_types}
-    latencies, costs = [], []
-    calls = input_tokens = output_tokens = 0
-
+    results = []
     for n, contract in enumerate(contracts, 1):
-        chunks = char_chunks(contract.text, chunk_chars, chunk_overlap)
-        doc_ms = doc_cost = 0.0
-        for ct in clause_types:
-            decision, failed = 0, False
-            for start, end in chunks:
-                response = client.classify_single(contract.text[start:end], ct)
-                calls += 1
-                doc_ms += response.latency_ms
-                doc_cost += response.cost_usd
-                input_tokens += response.input_tokens
-                output_tokens += response.output_tokens
-                if response.error:
-                    failed = True
-                    break
-                if response.text.strip().upper().startswith("YES"):
-                    decision = 1
-                    break
-            if failed:
-                failures[ct] += 1
-                continue
-            predictions[ct].append(decision)
-            labels[ct].append(int(contract.clauses.get(ct, False)))
-        latencies.append(doc_ms)
-        costs.append(doc_cost)
+        chunks = [
+            contract.text[s:e] for s, e in char_chunks(contract.text, chunk_chars, chunk_overlap)
+        ]
+        predictions, responses = ask(client, chunks, clause_types)
+        results.append(_contract_result(contract, clause_types, predictions, responses))
         if on_contract:
             on_contract(n, len(contracts))
 
     return ArmResult(
-        metrics=_score(labels, predictions),
-        stats=summarise_documents(latencies, costs, input_tokens, output_tokens),
-        predictions=predictions,
-        labels=labels,
-        failures=failures,
-        calls=calls,
+        arm="zero_shot",
         model=f"{getattr(client, 'provider', '')}/{getattr(client, 'model', '')}".strip("/"),
+        clause_types=list(clause_types),
+        contracts=results,
+        settings={
+            "mode": mode,
+            "prompt_version": PROMPT_VERSION,
+            "chunk_chars": chunk_chars,
+            "chunk_overlap": chunk_overlap,
+        },
     )
 
 
@@ -102,9 +214,9 @@ def evaluate_fine_tuned(
     classifier,
     contracts,
     clause_types: Sequence[str],
-    threshold: Optional[float] = None,
-    cost_per_hour: Optional[float] = None,
-    on_contract: Optional[Callable[[int, int], None]] = None,
+    threshold: float | None = None,
+    cost_per_hour: float | None = None,
+    on_contract: Callable[[int, int], None] | None = None,
 ) -> ArmResult:
     """Score each contract with the windowed classifier.
 
@@ -120,27 +232,25 @@ def evaluate_fine_tuned(
             f"It was trained on {classifier.clause_types}."
         )
 
-    predictions = {ct: [] for ct in clause_types}
-    labels = {ct: [] for ct in clause_types}
-    latencies = []
-
+    results = []
     for n, contract in enumerate(contracts, 1):
         probs, ms = classifier.predict_contract(contract.text)
-        latencies.append(ms)
-        for ct in clause_types:
-            predictions[ct].append(int(probs[ct] >= threshold))
-            labels[ct].append(int(contract.clauses.get(ct, False)))
+        results.append(
+            ContractResult(
+                contract_id=contract.contract_id,
+                labels=_labels(contract, clause_types),
+                predictions={ct: int(probs[ct] >= threshold) for ct in clause_types},
+                latency_ms=ms,
+                cost_usd=None if cost_per_hour is None else ms / 3_600_000 * cost_per_hour,
+            )
+        )
         if on_contract:
             on_contract(n, len(contracts))
 
-    costs = None
-    if cost_per_hour is not None:
-        costs = [ms / 3_600_000 * cost_per_hour for ms in latencies]
-
     return ArmResult(
-        metrics=_score(labels, predictions),
-        stats=summarise_documents(latencies, costs),
-        predictions=predictions,
-        labels=labels,
+        arm="fine_tuned",
         model=getattr(classifier, "base_model_name", None) or getattr(classifier, "model_name", ""),
+        clause_types=list(clause_types),
+        contracts=results,
+        settings={"threshold": threshold, "cost_per_hour": cost_per_hour},
     )

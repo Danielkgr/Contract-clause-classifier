@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![37 tests](https://img.shields.io/badge/tests-37-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![82 tests](https://img.shields.io/badge/tests-82-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -44,7 +44,7 @@ CUAD contracts are long.  The median runs to 33,000 characters and the longest t
 | **Load** | `load_cuad_dataset()` | Reads CUAD v1 (`CUAD_v1.json`) from `data/`, or downloads it from [Hugging Face](https://huggingface.co/datasets/theatticusproject/cuad).  CUAD has no splits, so each contract goes to train, validation, or test (401, 53, and 56 contracts) by a stable hash of its title.  If the download fails, it falls back to local CSV, JSON, or Parquet files in `data/`. |
 | **Wrap** | `ContractData` | Holds each contract's title, its full text, whether each clause type is present, and the character offsets of every CUAD answer span. |
 | **Fine-tune** | `utils/classifier.py` | Trains one multi-label `roberta-base` model on overlapping windows of the training contracts, labelled from the answer spans. |
-| **Zero-shot** | `utils/llm_client.py` | Asks the LLM whether a chunk of the contract contains a clause type, answering only YES or NO, through OpenAI directly or any LiteLLM-compatible provider. |
+| **Zero-shot** | `utils/anthropic_client.py` | Asks Claude which clause types appear in each chunk of the contract, through the official `anthropic` SDK, with a JSON answer.  `utils/openai_client.py` keeps an OpenAI path for comparison. |
 | **Evaluate** | `utils/evaluation.py` | Runs both arms over the test contracts and times each contract.  The CLI and the notebook share this code. |
 | **Report** | `compare_classifiers.py` | Writes the metrics table, the plot, a summary, and the full report to `outputs/`. |
 
@@ -61,11 +61,25 @@ CUAD contracts are long.  The median runs to 33,000 characters and the longest t
 
 ### The zero-shot arm
 
-The client sends the contract in chunks of 24,000 characters that overlap by 1,000, and asks about one clause type at a time.  A clause counts as present at the first chunk that gets YES, and the remaining chunks are skipped for that clause.  If a call fails before a YES, that contract and clause type are left out of the metrics and counted, rather than scored as NO.
+The client sends the contract in chunks of 24,000 characters that overlap by 1,000.  Claude is the default, called through the official `anthropic` SDK, with `claude-opus-5-5` as the default model.  The system prompt defines each clause type and asks for a JSON answer that lists the types appearing in the chunk, and Claude's structured outputs hold the answer to that format.
+
+| Prompt mode | Calls | When a clause counts as present |
+|---|---|---|
+| **Multi-label**, the default | One call per chunk, about every clause type | When any chunk's answer lists it |
+| **Single-label** | One call per chunk and clause type | When any chunk's answer lists it.  Once one chunk has a type, the remaining chunks are skipped for that type. |
+
+Both modes share one prompt template, so they differ only in how many clause types each call covers.  In multi-label mode a contract needs roughly one call per chunk, where single-label mode needs up to one per chunk for every clause type.
+
+A failed call is never read as absent.  If no chunk's answer lists a clause type and a call that could have found it failed, that contract and clause type are left out of the metrics and counted.  A call fails when the API returns an error, the model refuses, the answer is cut off at `LLM_MAX_TOKENS`, or the answer is not the JSON asked for.  A rejected API key or an unknown model stops the run at the first call instead.
+
+> [!NOTE]
+> The harness does not turn on Anthropic's server-side fallbacks.  A fallback would let a different model answer a refused request without that showing in the results, so a refusal is recorded as its own outcome instead.
+
+The definitions come first in each request and are marked for prompt caching.  The API caches them only once they reach the model's minimum cacheable length, which is 512 tokens for Opus 5.5 and Sonnet 5.5 and 4,096 for Haiku 4.5.  With the 12 default clause types the system prompt is about 1,400 characters, roughly 350 tokens, so expect no cache reads at the defaults.  Each call records the cache reads that the API reports in its usage.
 
 ### Latency and cost
 
-Both arms are timed per contract.  For the LLM, that is the sum of its calls, and cost is the token count multiplied by the per-million prices in `config.py`, which warns when a model has no listed price.  For the fine-tuned model, it is the time to tokenise and score every window.  The fine-tuned arm has no per-call fee, so its cost is reported as not priced unless `FT_COST_PER_HOUR` is set, in which case the measured time is multiplied by that rate.
+Both arms are timed per contract.  For the LLM, that is the sum of its calls, and cost comes from the token usage each response reports, at the per-million prices in `utils/pricing.py`.  Cached input is priced at its own rate, and a model with no listed price is reported as not priced rather than charged at a guessed rate.  The OpenAI prices there were recorded on 2026-09-23 and need checking before use.  For the fine-tuned model, it is the time to tokenise and score every window.  The fine-tuned arm has no per-call fee, so its cost is reported as not priced unless `FT_COST_PER_HOUR` is set, in which case the measured time is multiplied by that rate.
 
 ### Choosing between the two
 
@@ -76,7 +90,7 @@ These are the trade-offs the report is built to test.  Until a run is published 
 | **Volume** | A few documents a day | Hundreds of documents a day |
 | **Setup** | No training and no ML infrastructure | A training run and a GPU |
 | **Running cost** | Per-token API fees on every call | A one-off training cost, then no per-call fee |
-| **Latency** | An API round trip for every clause and chunk | Local inference over every window of the contract |
+| **Latency** | An API round trip for every chunk | Local inference over every window of the contract |
 | **Data handling** | Contract text goes to the provider | Contract text stays in-house |
 | **Best fit** | A prototype or proof of concept | A long-term deployed service |
 
@@ -98,7 +112,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The 36 tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms with stand-in models, cost units, the handling of failed calls, loading settings from `.env`, and masking the API key.  They need only pandas, scikit-learn, python-dotenv, and pytest.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  A 37th test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
+The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
 
 <br>
 
@@ -135,7 +149,7 @@ Choose an option [1]:
 
 | Submenu | What it sets |
 |---|---|
-| **LLM settings** | Provider (`openai`, `anthropic`, `google`, or custom), model name, API key, base URL, temperature, and max tokens |
+| **LLM settings** | Provider (`anthropic` or `openai`), model name, API key, base URL, temperature, and max tokens |
 | **Training settings** | Model name, epochs, batch size, learning rate, max token length, weight decay, warmup steps, eval steps, and save steps |
 | **Clause types** | A checklist of active clause types, with options to add another CUAD category, remove one, or restore the 12 defaults |
 | **Output directory** | Where results are saved.  The directory is created if it does not exist. |
@@ -163,12 +177,15 @@ python compare_classifiers.py --output ./custom_output
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLM_PROVIDER` | `openai` | LLM backend, such as `openai` or `anthropic` |
-| `LLM_MODEL` | `gpt-3.5-turbo` | Model identifier |
-| `LLM_API_KEY` | Required | API key for the chosen provider |
-| `LLM_TEMPERATURE` | `0.0` | Sampling temperature |
-| `LLM_MAX_TOKENS` | `500` | Maximum completion tokens |
-| `LLM_BASE_URL` | Optional | Custom base URL, for Azure or Ollama for example |
+| `LLM_PROVIDER` | `anthropic` | `anthropic` for Claude, or `openai` for the comparison path |
+| `LLM_MODEL` | `claude-opus-5-5` | `claude-opus-5-5`, `claude-sonnet-5-5`, or `claude-haiku-4-5`.  The `openai` provider defaults to `gpt-4o-mini`. |
+| `LLM_API_KEY` | Required | API key for the chosen provider.  When it is unset, the SDK reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. |
+| `LLM_MODE` | `multi` | `multi` asks about every clause type in one call per chunk.  `single` asks about one clause type per call. |
+| `LLM_EFFORT` | `low` | Thinking depth for Opus and Sonnet: `low`, `medium`, `high`, `xhigh`, or `max`.  Haiku takes no effort setting. |
+| `LLM_MAX_TOKENS` | `2048` | Cap on output tokens, thinking included.  Output is billed as used, not at the cap. |
+| `LLM_TEMPERATURE` | Unset | Sent only when set.  `claude-opus-5-5` and `claude-sonnet-5-5` reject it. |
+| `LLM_TIMEOUT` | `120` | Seconds to wait for one response |
+| `LLM_BASE_URL` | Optional | An OpenAI-compatible server, for Azure or Ollama for example.  `openai` provider only. |
 | `LLM_CHUNK_CHARS` | `24000` | Characters of contract per LLM call |
 | `LLM_CHUNK_OVERLAP` | `1000` | Characters shared by consecutive chunks |
 | `TRAIN_MODEL` | `roberta-base` | Hugging Face model to fine-tune |
@@ -232,7 +249,7 @@ Every artefact is written to `outputs/`.
 | **Machine learning** | `torch`, `transformers`, `accelerate` |
 | **Data** | `huggingface_hub`, `datasets`, `pandas` |
 | **Evaluation** | `scikit-learn`, `numpy` |
-| **LLM APIs** | `openai`, `litellm`, `tiktoken` |
+| **LLM APIs** | `anthropic` for Claude, `openai` for the comparison path, `tiktoken` |
 | **Charts** | `matplotlib`, `seaborn` |
 | **Utilities** | `python-dotenv`, `tqdm`, `requests` |
 | **Tests** | `pytest` |
@@ -251,13 +268,17 @@ Contract-clause-classifier/
   .env.example               Environment variable template (optional)
   utils/
     __init__.py              Public API exports
-    llm_client.py            Zero-shot LLM client (OpenAI and LiteLLM)
+    llm_client.py            Provider-neutral zero-shot client and the provider switch
+    anthropic_client.py      Claude through the official anthropic SDK
+    openai_client.py         OpenAI, kept for comparison
+    prompts.py               The shared prompt, its JSON answer, and the clause definitions
+    pricing.py               List prices and the cost of a call from its usage
     data_loader.py           CUAD loading and splitting, from data/ or Hugging Face
     classifier.py            Windowed multi-label transformer (FineTunedClassifier)
     chunking.py              Contract chunks and window labels from answer spans
     evaluation.py            Contract-level evaluation of both arms, shared by the CLI and notebook
     metrics.py               ClassificationMetrics, InferenceStats, aggregation helpers
-  tests/                     Loader, chunking, evaluation, cost, and failed-call tests, plus a smoke test
+  tests/                     Loader, chunking, evaluation, prompt, cost, and client tests, plus a smoke test
   data/                      Optional local copy of CUAD_v1.json, or fallback CSV, JSON, or Parquet
   models/                    Saved fine-tuned checkpoints
   outputs/                   Results, created on the first run

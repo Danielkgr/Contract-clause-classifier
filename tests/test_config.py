@@ -23,7 +23,6 @@ def test_mask_secret_reports_a_missing_value():
     assert mask_secret("") == "(not set)"
 
 
-
 @pytest.fixture
 def clean_environ(monkeypatch):
     """An environment with no settings in it, restored after the test.
