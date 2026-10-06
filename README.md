@@ -169,7 +169,7 @@ The estimate counts calls and characters exactly from the run's own chunking.  T
 |---|---|---|
 | `LLM_PROVIDER` | `anthropic` | `anthropic` for Claude, or `openai` for the comparison path |
 | `LLM_MODEL` | `claude-opus-5-5` | `claude-opus-5-5`, `claude-sonnet-5-5`, or `claude-haiku-4-5`.  The `openai` provider defaults to `gpt-4o-mini`. |
-| `LLM_API_KEY` | Required | API key for the chosen provider.  When it is unset, the SDK reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. |
+| `LLM_API_KEY` | Unset | API key for the chosen provider.  When it is unset, the key comes from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, and `zero-shot` needs one of them. |
 | `LLM_MODE` | `multi` | `multi` asks about every clause type in one call per chunk.  `single` asks about one clause type per call. |
 | `LLM_EFFORT` | `low` | Thinking depth for Opus and Sonnet: `low`, `medium`, `high`, `xhigh`, or `max`.  Haiku takes no effort setting. |
 | `LLM_MAX_TOKENS` | `2048` | Cap on output tokens, thinking included.  Output is billed as used, not at the cap. |
