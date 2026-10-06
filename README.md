@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![98 tests](https://img.shields.io/badge/tests-98-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![102 tests](https://img.shields.io/badge/tests-102-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -118,7 +118,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, retries, the response cache, concurrency, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
+The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, retries, the response cache, concurrency, the cost estimate, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
 
 <br>
 
@@ -162,7 +162,7 @@ Choose an option [1]:
 
 ### Flags
 
-Passing `--quick-test` or `--max-samples` skips the menu and every prompt.
+Passing `--quick-test`, `--max-samples`, or `--estimate` skips the menu and every prompt.
 
 ```bash
 # Quick test on 5 test contracts
@@ -174,9 +174,15 @@ python compare_classifiers.py --max-samples 20
 # Write results somewhere other than outputs/
 python compare_classifiers.py --output ./custom_output
 
+# Estimate calls, tokens, and cost of the zero-shot arm, with no API call or key
+python compare_classifiers.py --estimate
+python compare_classifiers.py --estimate --text-file contract.txt
+
 # Neither read nor write the response cache
 python compare_classifiers.py --quick-test --no-cache
 ```
+
+The estimate counts calls and characters exactly from the run's own chunking.  Tokens are characters divided by 4 and output is assumed at 200 tokens per call, which `--output-tokens` changes, so its token and cost figures are estimates.
 
 <br>
 
@@ -286,6 +292,7 @@ Contract-clause-classifier/
     prompts.py               The shared prompt, its JSON answer, and the clause definitions
     pricing.py               List prices and the cost of a call from its usage
     response_cache.py        Completed API responses on disk, so a re-run is free
+    estimate.py              Calls, tokens, and cost of a run, estimated with no API call
     data_loader.py           CUAD loading and splitting, from data/ or Hugging Face
     classifier.py            Windowed multi-label transformer (FineTunedClassifier)
     chunking.py              Contract chunks and window labels from answer spans

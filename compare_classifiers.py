@@ -37,6 +37,7 @@ from utils.data_loader import load_cuad_dataset, get_clause_distribution
 from utils.classifier import FineTunedClassifier, TrainingResult
 from utils.evaluation import ArmResult, evaluate_zero_shot, evaluate_fine_tuned
 from utils.metrics import aggregate_metrics
+from utils.estimate import DEFAULT_OUTPUT_TOKENS, estimate, format_estimate
 from utils.prompts import PROMPT_VERSION
 
 logging.basicConfig(
@@ -808,6 +809,22 @@ def _interactive_run(mode: str, max_samples: Optional[int] = None, ask: bool = T
 # Entry point                                                               #
 # ----------------------------------------------------------------------- #
 
+def _print_estimate(text_files: Optional[List[str]], output_tokens: int):
+    """Print the zero-shot cost estimate for the CUAD test split or the given files."""
+    if text_files:
+        texts = []
+        for name in text_files:
+            with open(name, encoding="utf-8") as fh:
+                texts.append(fh.read())
+        source = ", ".join(os.path.basename(name) for name in text_files)
+    else:
+        texts = [c.text for c in load_cuad_dataset(split="test")]
+        source = "CUAD test split"
+    est = estimate(texts, config.data.clause_types, config.llm.chunk_chars,
+                   config.llm.chunk_overlap, output_tokens)
+    print(format_estimate(est, source))
+
+
 def main():
     """Interactive CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -818,11 +835,20 @@ def main():
     parser.add_argument("--quick-test", action="store_true",
                         help=f"Zero-shot on {QUICK_TEST_CONTRACTS} test contracts, plus any saved model")
     parser.add_argument("--output", type=str, default=None, help="Custom output directory for results")
+    parser.add_argument("--estimate", action="store_true",
+                        help="Estimate calls, tokens, and cost of the zero-shot arm, with no API call")
+    parser.add_argument("--text-file", nargs="+", default=None,
+                        help="With --estimate, contract text files to use instead of the CUAD test split")
+    parser.add_argument("--output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS,
+                        help="With --estimate, output tokens assumed per call")
     parser.add_argument("--no-cache", action="store_true",
                         help="Neither read nor write the on-disk response cache")
 
     args = parser.parse_args()
 
+    if args.estimate:
+        _print_estimate(args.text_file, args.output_tokens)
+        return
     if args.no_cache:
         global USE_CACHE
         USE_CACHE = False
