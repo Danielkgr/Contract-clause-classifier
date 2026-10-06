@@ -252,7 +252,6 @@ class Paths:
     data_dir: str = os.path.join(base_dir, "data")
     outputs_dir: str = os.path.join(base_dir, "outputs")
     models_dir: str = os.path.join(base_dir, "models")
-    notebook_dir: str = base_dir
 
 
 @dataclass

@@ -257,7 +257,6 @@ Every artefact is written to `outputs/`.
 Contract-clause-classifier/
   compare_classifiers.py     Command line: estimate, zero-shot, fine-tune, compare, show-config
   config.py                  Configuration as dataclasses, read from the environment
-  evaluation.ipynb           Jupyter notebook for interactive exploration
   requirements.txt           Python dependencies
   requirements-dev.txt       Test dependencies (pandas, scikit-learn, python-dotenv, and pytest)
   .env.example               Environment variable template (optional)
@@ -274,7 +273,7 @@ Contract-clause-classifier/
     data_loader.py           CUAD loading and splitting, from data/ or Hugging Face
     classifier.py            Windowed multi-label transformer (FineTunedClassifier)
     chunking.py              Contract chunks and window labels from answer spans
-    evaluation.py            Contract-level evaluation of both arms, shared by the CLI and notebook
+    evaluation.py            Contract-level evaluation of both arms, and their saved results
     metrics.py               ClassificationMetrics, InferenceStats, aggregation helpers
   tests/                     Loader, chunking, evaluation, prompt, cost, and client tests, plus a smoke test
   data/                      Optional local copy of CUAD_v1.json
