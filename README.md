@@ -254,7 +254,7 @@ Every artefact is written to `outputs/`.
 ## Layout
 
 ```text
-Contract-clause-classifier/
+contract-clause-classifier/
   compare_classifiers.py     Command line: estimate, zero-shot, fine-tune, compare, show-config
   config.py                  Configuration as dataclasses, read from the environment
   requirements.txt           Python dependencies
