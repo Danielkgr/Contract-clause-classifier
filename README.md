@@ -33,6 +33,75 @@ Until then, the guidance in [Choosing between the two](#choosing-between-the-two
 
 <br>
 
+## Running the comparison
+
+No run has been made yet.  These are the four steps to make one, in order and cheapest first.
+
+### Estimate the cost, with no API key
+
+```bash
+python compare_classifiers.py estimate
+```
+
+This was its output for the CUAD test split on 6 October 2026.  Calls and characters are counted exactly from the run's own chunking.  The token and cost figures are estimates.
+
+| Input | Value |
+|---|---:|
+| Contracts | 56 |
+| Characters | 2,370,988 |
+| Chunks of up to 24,000 characters, overlapping by 1,000 | 130 |
+| Clause types | 12 |
+
+| Prompt mode | Calls | Input tokens | Output tokens |
+|---|---:|---:|---:|
+| Multi-label | 130 | 0.66M | 0.03M |
+| Single-label | up to 1,560 | up to 7.59M | up to 0.31M |
+
+| Model | Multi-label | Single-label |
+|---|---:|---:|
+| `claude-opus-5-5` | $3.15 | up to $36.62 |
+| `claude-sonnet-5-5` | $1.57 | up to $18.31 |
+| `claude-haiku-4-5` | $0.79 | up to $9.15 |
+
+> [!IMPORTANT]
+> These are estimates at list prices, not measurements.  Tokens are characters divided by 4, each call is assumed to return 200 output tokens including thinking, and no prompt-cache or Batches API discount is applied.  Single-label figures are upper bounds, because a run stops asking about a clause type once one chunk of the contract has it.  A real run records the actual usage and cost of every call.
+
+Asking about every clause type in one call means the model reads each part of a contract once, rather than once for each clause type.  With the 12 default clause types, that cuts the number of calls, and most of the cost, by roughly twelve times.  For a firm, it is the difference between paying for one read of each contract and paying for twelve.
+
+### Run the zero-shot arm on Claude
+
+Put an Anthropic API key in `.env` as `LLM_API_KEY`, or export `ANTHROPIC_API_KEY`, then:
+
+```bash
+python compare_classifiers.py zero-shot --max-contracts 5   # a first check on five contracts
+python compare_classifiers.py zero-shot                     # all 56 test contracts
+```
+
+The second command reads the first five contracts' answers from the cache and asks only about the rest.  It writes `outputs/zero_shot-claude-opus-5-5-multi.json`.  Adding `--model claude-sonnet-5-5`, `--model claude-haiku-4-5`, or `--mode single` compares models or prompt modes, and each run writes its own file.
+
+### Run the fine-tuned arm on a GPU
+
+Fine-tuning RoBERTa needs a GPU in practice, for example a Google Colab notebook with a T4 GPU runtime:
+
+```bash
+!git clone https://github.com/Danielkgr/contract-clause-classifier.git
+%cd contract-clause-classifier
+!pip install -r requirements.txt
+!python compare_classifiers.py fine-tune
+```
+
+It trains on the 401 training contracts, checks progress against the 53 validation contracts, scores the 56 test contracts, and writes `outputs/fine_tuned-roberta-base.json`.  In Colab, `from google.colab import files; files.download("outputs/fine_tuned-roberta-base.json")` downloads that file.  Put it in `outputs/` next to the zero-shot results.
+
+### Write the report
+
+```bash
+python compare_classifiers.py compare
+```
+
+It scores every saved arm on the contracts they share and writes `comparison_report.md`, `summary.md`, `comparison_metrics.csv`, and `comparison_plot.png` to `outputs/`.  Those are the files the Results section will cite.
+
+<br>
+
 ## How it works
 
 CUAD contracts are long.  The median runs to 33,000 characters and the longest to 338,000, and the clauses sit throughout.  Across the 510 contracts there are 2,510 cases of a contract containing one of the 12 default clause types, and in only 5 of them does the clause begin within the first 512 characters.  Both arms therefore read the whole contract.
