@@ -46,17 +46,31 @@ class OpenAIClient(LLMClient):
         temperature: float | None = None,
         timeout: float = 120.0,
         http_client=None,
+        **client_options,
     ):
         if model.startswith("claude-"):
             raise ValueError("Claude models are reached through the anthropic provider")
-        super().__init__(model, max_tokens)
+        super().__init__(model, max_tokens, **client_options)
+        self.base_url = base_url
         self.temperature = temperature
         try:
+            # LLMClient retries transient errors itself, so the SDK's are off
             self._client = openai.OpenAI(
-                api_key=api_key, base_url=base_url, timeout=timeout, http_client=http_client
+                api_key=api_key,
+                base_url=base_url,
+                timeout=timeout,
+                max_retries=0,
+                http_client=http_client,
             )
         except openai.OpenAIError as exc:
             raise ValueError(f"Could not set up the OpenAI client: {exc}") from exc
+
+    def cache_settings(self) -> dict:
+        return {
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "base_url": self.base_url,
+        }
 
     def request(self, excerpt: str, clause_types: Sequence[str]) -> dict:
         """The chat completion parameters for one excerpt."""

@@ -8,6 +8,7 @@ CUAD labels.  Latency and cost are measured per contract.
 
 from collections import Counter
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +34,8 @@ class ContractResult:
     latency_ms: float = 0.0
     cost_usd: float | None = None  # None when not priced
     calls: int = 0
+    cached_calls: int = 0  # answered from the response cache, with no API call
+    retries: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
@@ -100,6 +103,14 @@ class ArmResult:
         return sum(c.calls for c in self.contracts)
 
     @property
+    def cached_calls(self) -> int:
+        return sum(c.cached_calls for c in self.contracts)
+
+    @property
+    def retries(self) -> int:
+        return sum(c.retries for c in self.contracts)
+
+    @property
     def outcomes(self) -> dict[str, int]:
         """How every call ended, counted across the contracts."""
         total: Counter = Counter()
@@ -132,6 +143,8 @@ def _contract_result(contract, clause_types, predictions, responses) -> Contract
         latency_ms=sum(r.latency_ms for r in responses),
         cost_usd=None if any(cost is None for cost in costs) else sum(costs),
         calls=len(responses),
+        cached_calls=sum(1 for r in responses if r.cached),
+        retries=sum(r.retries for r in responses),
         input_tokens=sum(r.usage.input_tokens for r in responses),
         output_tokens=sum(r.usage.output_tokens for r in responses),
         cache_read_tokens=sum(r.usage.cache_read_tokens for r in responses),
@@ -167,9 +180,14 @@ def evaluate_zero_shot(
     mode: str = "multi",
     chunk_chars: int | None = None,
     chunk_overlap: int | None = None,
+    concurrency: int = 1,
     on_contract: Callable[[int, int], None] | None = None,
 ) -> ArmResult:
     """Ask the LLM about every chunk of each contract.
+
+    Up to concurrency contracts are asked about at the same time, each one
+    call at a time.  Results come back in contract order whatever the
+    concurrency.  A FatalLLMError stops the run and cancels what is queued.
 
     In multi-label mode each chunk is one call about every clause type.  In
     single-label mode each call is about one clause type, and the remaining
@@ -178,7 +196,7 @@ def evaluate_zero_shot(
     it and a call failed, the answer is unknown, so that contract and clause
     type are left out of the metrics and counted in failures rather than
     scored as absent.  Latency and cost per contract are the sums over its
-    calls.
+    calls, so they do not depend on the concurrency.
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
@@ -186,15 +204,23 @@ def evaluate_zero_shot(
     chunk_overlap = config.llm.chunk_overlap if chunk_overlap is None else chunk_overlap
     ask = _ask_multi if mode == "multi" else _ask_single
 
-    results = []
-    for n, contract in enumerate(contracts, 1):
-        chunks = [
-            contract.text[s:e] for s, e in char_chunks(contract.text, chunk_chars, chunk_overlap)
-        ]
+    def run(contract):
+        spans = char_chunks(contract.text, chunk_chars, chunk_overlap)
+        chunks = [contract.text[start:end] for start, end in spans]
         predictions, responses = ask(client, chunks, clause_types)
-        results.append(_contract_result(contract, clause_types, predictions, responses))
-        if on_contract:
-            on_contract(n, len(contracts))
+        return _contract_result(contract, clause_types, predictions, responses)
+
+    results: list[ContractResult | None] = [None] * len(contracts)
+    pool = ThreadPoolExecutor(max_workers=max(1, concurrency))
+    try:
+        futures = {pool.submit(run, contract): i for i, contract in enumerate(contracts)}
+        for done, future in enumerate(as_completed(futures), 1):
+            results[futures[future]] = future.result()
+            if on_contract:
+                on_contract(done, len(contracts))
+    finally:
+        # On an error, drop the queued contracts instead of asking about them
+        pool.shutdown(wait=True, cancel_futures=True)
 
     return ArmResult(
         arm="zero_shot",
@@ -206,6 +232,7 @@ def evaluate_zero_shot(
             "prompt_version": PROMPT_VERSION,
             "chunk_chars": chunk_chars,
             "chunk_overlap": chunk_overlap,
+            "concurrency": concurrency,
         },
     )
 

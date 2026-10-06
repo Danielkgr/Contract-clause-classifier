@@ -4,7 +4,7 @@ import pytest
 
 from utils.data_loader import ContractData
 from utils.evaluation import evaluate_fine_tuned, evaluate_zero_shot
-from utils.llm_client import LLMResponse, Usage
+from utils.llm_client import FatalLLMError, LLMResponse, Usage
 
 FILLER = "The parties agree as follows. " * 2000  # about 60,000 characters
 CHUNKING = {"chunk_chars": 10_000, "chunk_overlap": 500}
@@ -114,6 +114,41 @@ def test_failed_calls_are_left_out_and_counted():
     assert result.failures == {"Insurance": 1, "Exclusivity": 0}
     assert "Insurance" not in result.metrics
     assert result.predictions["Exclusivity"] == [0]
+
+
+@pytest.mark.parametrize("mode", ["multi", "single"])
+def test_concurrency_does_not_change_the_results_or_their_order(mode):
+    types = ["Governing Law", "Insurance"]
+    contracts = [
+        _contract(f"c{i}", {}, tail="[Insurance] cover." if i % 2 else "") for i in range(6)
+    ]
+    one = evaluate_zero_shot(StubLLM(), contracts, types, mode=mode, **CHUNKING)
+    many = evaluate_zero_shot(StubLLM(), contracts, types, mode=mode, concurrency=4, **CHUNKING)
+    assert [c.contract_id for c in many.contracts] == [f"c{i}" for i in range(6)]
+    assert [c.predictions for c in many.contracts] == [c.predictions for c in one.contracts]
+    assert many.stats.avg_latency_ms == one.stats.avg_latency_ms
+
+
+def test_a_fatal_error_stops_the_run():
+    class Rejected(StubLLM):
+        def classify(self, excerpt, clause_types):
+            raise FatalLLMError("Anthropic rejected the credentials")
+
+    with pytest.raises(FatalLLMError):
+        evaluate_zero_shot(
+            Rejected(), [_contract("a", {})], ["Insurance"], concurrency=2, **CHUNKING
+        )
+
+
+def test_cached_calls_and_retries_are_counted():
+    class Cached(StubLLM):
+        def classify(self, excerpt, clause_types):
+            response = super().classify(excerpt, clause_types)
+            response.cached, response.retries = True, 1
+            return response
+
+    result = evaluate_zero_shot(Cached(), [_contract("a", {})], ["Insurance"], **CHUNKING)
+    assert result.cached_calls == result.calls == result.retries
 
 
 def test_an_unknown_mode_is_refused():

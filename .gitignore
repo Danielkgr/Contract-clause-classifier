@@ -46,3 +46,6 @@ outputs/
 
 # HuggingFace cache
 .huggingface/
+
+# Cached LLM responses
+.cache/

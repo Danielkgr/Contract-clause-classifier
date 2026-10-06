@@ -67,6 +67,7 @@ class AnthropicClient(LLMClient):
         temperature: float | None = None,
         timeout: float = 120.0,
         http_client=None,
+        **client_options,
     ):
         """
         Args:
@@ -77,6 +78,7 @@ class AnthropicClient(LLMClient):
             temperature: sent only when set, and only to a model that accepts it
             timeout: seconds to wait for one response
             http_client: an httpx2.Client to use instead of the SDK's own
+            client_options: cache, retry, and sleep, passed to LLMClient
         """
         if model not in MODELS:
             raise ValueError(
@@ -87,12 +89,21 @@ class AnthropicClient(LLMClient):
             raise ValueError(f"{model} rejects temperature, so leave LLM_TEMPERATURE unset")
         if effort not in EFFORTS:
             raise ValueError(f"effort must be one of {EFFORTS}, got {effort!r}")
-        super().__init__(model, max_tokens)
+        super().__init__(model, max_tokens, **client_options)
         self.effort = effort
         self.temperature = temperature
+        # LLMClient retries transient errors itself, so the SDK's own retries
+        # are off.  Measured latency then covers one attempt, never a backoff.
         self._client = anthropic.Anthropic(
-            api_key=api_key, timeout=timeout, http_client=http_client
+            api_key=api_key, timeout=timeout, max_retries=0, http_client=http_client
         )
+
+    def cache_settings(self) -> dict:
+        return {
+            "max_tokens": self.max_tokens,
+            "effort": self.effort if self.options.effort else None,
+            "temperature": self.temperature,
+        }
 
     def request(self, excerpt: str, clause_types: Sequence[str]) -> dict:
         """The Messages API parameters for one excerpt."""

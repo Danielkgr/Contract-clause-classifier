@@ -54,6 +54,8 @@ console = Console()
 
 # A quick test asks the LLM about this many test contracts
 QUICK_TEST_CONTRACTS = 5
+# --no-cache turns the on-disk response cache off
+USE_CACHE = True
 
 
 @dataclass
@@ -570,7 +572,8 @@ def _run_comparison(
     console.print("[cyan]Evaluating the zero-shot LLM…[/]")
     try:
         zero_shot = evaluate_zero_shot(
-            make_client(config.llm), contracts, clause_types, mode=config.llm.mode,
+            make_client(config.llm, use_cache=USE_CACHE), contracts, clause_types,
+            mode=config.llm.mode, concurrency=config.llm.concurrency,
             on_contract=_progress("Zero-shot"),
         )
     except (FatalLLMError, ValueError) as e:
@@ -815,8 +818,14 @@ def main():
     parser.add_argument("--quick-test", action="store_true",
                         help=f"Zero-shot on {QUICK_TEST_CONTRACTS} test contracts, plus any saved model")
     parser.add_argument("--output", type=str, default=None, help="Custom output directory for results")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="Neither read nor write the on-disk response cache")
 
     args = parser.parse_args()
+
+    if args.no_cache:
+        global USE_CACHE
+        USE_CACHE = False
 
     if args.output:
         config.paths.outputs_dir = args.output

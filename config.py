@@ -55,6 +55,10 @@ class LLMConfig:
     effort: str = "low"  # thinking depth for Claude models that take it
     mode: str = "multi"  # "multi" asks about every clause type per call, "single" one
     timeout: float = 120.0  # seconds to wait for one response
+    max_attempts: int = 6  # tries per call when the API fails in a way that may pass
+    concurrency: int = 4  # contracts asked about at the same time
+    # Completed responses are kept here, so a re-run is free and a crash loses nothing
+    cache_dir: str = str(BASE_DIR / ".cache" / "llm")
     # Contracts are sent in chunks that fit the model's context window.  The
     # overlap keeps a clause that straddles a boundary whole in one chunk.
     chunk_chars: int = 24000
@@ -78,6 +82,9 @@ class LLMConfig:
             effort=_setting(env, "LLM_EFFORT", cls.effort),
             mode=_setting(env, "LLM_MODE", cls.mode),
             timeout=_setting(env, "LLM_TIMEOUT", cls.timeout, float),
+            max_attempts=_setting(env, "LLM_MAX_ATTEMPTS", cls.max_attempts, int),
+            concurrency=_setting(env, "LLM_CONCURRENCY", cls.concurrency, int),
+            cache_dir=_setting(env, "LLM_CACHE_DIR", cls.cache_dir),
             chunk_chars=_setting(env, "LLM_CHUNK_CHARS", cls.chunk_chars, int),
             chunk_overlap=_setting(env, "LLM_CHUNK_OVERLAP", cls.chunk_overlap, int),
         )

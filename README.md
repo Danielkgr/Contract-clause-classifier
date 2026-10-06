@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![82 tests](https://img.shields.io/badge/tests-82-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![98 tests](https://img.shields.io/badge/tests-98-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -77,9 +77,15 @@ A failed call is never read as absent.  If no chunk's answer lists a clause type
 
 The definitions come first in each request and are marked for prompt caching.  The API caches them only once they reach the model's minimum cacheable length, which is 512 tokens for Opus 5.5 and Sonnet 5.5 and 4,096 for Haiku 4.5.  With the 12 default clause types the system prompt is about 1,400 characters, roughly 350 tokens, so expect no cache reads at the defaults.  Each call records the cache reads that the API reports in its usage.
 
+| Safeguard | What it does |
+|---|---|
+| **Retries** | A rate limit, an overloaded or failing server, or a dropped connection is retried up to five times, with a doubling, jittered wait that honours the server's `retry-after`.  The SDKs' own retries are off, so measured latency covers one attempt and never a wait. |
+| **Response cache** | Every completed response is saved in `.cache/llm/`, keyed by provider, model, prompt version and text, clause types, request settings, and a hash of the chunk.  A run that stops at call 1,400 loses nothing, and a re-run with the same settings makes no API call.  Errors are not cached, so a re-run retries them. |
+| **Concurrency** | Four contracts are asked about at a time by default, one call at a time within each, and results come back in contract order. |
+
 ### Latency and cost
 
-Both arms are timed per contract.  For the LLM, that is the sum of its calls, and cost comes from the token usage each response reports, at the per-million prices in `utils/pricing.py`.  Cached input is priced at its own rate, and a model with no listed price is reported as not priced rather than charged at a guessed rate.  The OpenAI prices there were recorded on 2026-09-23 and need checking before use.  For the fine-tuned model, it is the time to tokenise and score every window.  The fine-tuned arm has no per-call fee, so its cost is reported as not priced unless `FT_COST_PER_HOUR` is set, in which case the measured time is multiplied by that rate.
+Both arms are timed per contract.  For the LLM, that is the sum of its calls, and a call answered from the cache keeps the latency and cost measured when it was made.  Cost comes from the token usage each response reports, at the per-million prices in `utils/pricing.py`.  Cached input is priced at its own rate, and a model with no listed price is reported as not priced rather than charged at a guessed rate.  The OpenAI prices there were recorded on 2026-09-23 and need checking before use.  For the fine-tuned model, it is the time to tokenise and score every window.  The fine-tuned arm has no per-call fee, so its cost is reported as not priced unless `FT_COST_PER_HOUR` is set, in which case the measured time is multiplied by that rate.
 
 ### Choosing between the two
 
@@ -112,7 +118,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
+The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, retries, the response cache, concurrency, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
 
 <br>
 
@@ -156,7 +162,7 @@ Choose an option [1]:
 
 ### Flags
 
-Passing any flag skips the menu and every prompt.
+Passing `--quick-test` or `--max-samples` skips the menu and every prompt.
 
 ```bash
 # Quick test on 5 test contracts
@@ -167,6 +173,9 @@ python compare_classifiers.py --max-samples 20
 
 # Write results somewhere other than outputs/
 python compare_classifiers.py --output ./custom_output
+
+# Neither read nor write the response cache
+python compare_classifiers.py --quick-test --no-cache
 ```
 
 <br>
@@ -185,6 +194,9 @@ python compare_classifiers.py --output ./custom_output
 | `LLM_MAX_TOKENS` | `2048` | Cap on output tokens, thinking included.  Output is billed as used, not at the cap. |
 | `LLM_TEMPERATURE` | Unset | Sent only when set.  `claude-opus-5-5` and `claude-sonnet-5-5` reject it. |
 | `LLM_TIMEOUT` | `120` | Seconds to wait for one response |
+| `LLM_MAX_ATTEMPTS` | `6` | Tries per call when the API fails in a way that may pass on a retry |
+| `LLM_CONCURRENCY` | `4` | Contracts asked about at the same time |
+| `LLM_CACHE_DIR` | `.cache/llm` | Where completed responses are kept |
 | `LLM_BASE_URL` | Optional | An OpenAI-compatible server, for Azure or Ollama for example.  `openai` provider only. |
 | `LLM_CHUNK_CHARS` | `24000` | Characters of contract per LLM call |
 | `LLM_CHUNK_OVERLAP` | `1000` | Characters shared by consecutive chunks |
@@ -273,6 +285,7 @@ Contract-clause-classifier/
     openai_client.py         OpenAI, kept for comparison
     prompts.py               The shared prompt, its JSON answer, and the clause definitions
     pricing.py               List prices and the cost of a call from its usage
+    response_cache.py        Completed API responses on disk, so a re-run is free
     data_loader.py           CUAD loading and splitting, from data/ or Hugging Face
     classifier.py            Windowed multi-label transformer (FineTunedClassifier)
     chunking.py              Contract chunks and window labels from answer spans
@@ -282,6 +295,7 @@ Contract-clause-classifier/
   data/                      Optional local copy of CUAD_v1.json, or fallback CSV, JSON, or Parquet
   models/                    Saved fine-tuned checkpoints
   outputs/                   Results, created on the first run
+  .cache/llm/                Cached LLM responses, created by the first zero-shot run
 ```
 
 <br>
