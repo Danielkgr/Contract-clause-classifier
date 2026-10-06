@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) ![126 tests](https://img.shields.io/badge/tests-126-0969da?style=for-the-badge) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![no results yet](https://img.shields.io/badge/results-none_yet-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) [![CI](https://img.shields.io/github/actions/workflow/status/Danielkgr/contract-clause-classifier/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/Danielkgr/contract-clause-classifier/actions/workflows/ci.yml) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -117,10 +117,11 @@ Settings come from `.env` and the environment.  The file is read once at startup
 
 ```bash
 pip install -r requirements-dev.txt
+ruff check . && ruff format --check .
 pytest
 ```
 
-The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, retries, the response cache, concurrency, the cost estimate, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.
+The tests cover CUAD parsing, splitting, and answer spans, chunking and window labelling, both evaluation arms and both prompt modes with stand-in models, the Claude and OpenAI clients with the API mocked at the HTTP layer, prices and cost, the handling of failed calls and refusals, retries, the response cache, concurrency, the cost estimate, loading settings from `.env`, and masking the API key.  They make no network calls, need no API key, and need only `requirements-dev.txt`, which has no torch.  One of them checks the real CUAD file when `data/CUAD_v1.json` is present.  One more test trains, saves, reloads, and runs the real classifier with a tiny model.  It needs torch and transformers, downloads the model, and runs only with `RUN_SMOKE=1 pytest`.  CI runs the lint, format, and test commands above on Python 3.12 and 3.13 for every push and pull request.
 
 <br>
 
@@ -246,7 +247,7 @@ Every artefact is written to `outputs/`.
 | **LLM APIs** | `anthropic` for Claude, `openai` for the comparison path |
 | **Charts** | `matplotlib` |
 | **Utilities** | `python-dotenv` |
-| **Tests** | `pytest` |
+| **Tests and lint** | `pytest`, `ruff` |
 
 <br>
 
@@ -257,7 +258,9 @@ Contract-clause-classifier/
   compare_classifiers.py     Command line: estimate, zero-shot, fine-tune, compare, show-config
   config.py                  Configuration as dataclasses, read from the environment
   requirements.txt           Python dependencies
-  requirements-dev.txt       Test dependencies (pandas, scikit-learn, python-dotenv, and pytest)
+  requirements-dev.txt       Test and lint dependencies, without torch
+  pyproject.toml             Ruff and pytest settings
+  .github/workflows/ci.yml   Lint, format check, and tests on every push and pull request
   .env.example               Environment variable template (optional)
   utils/
     __init__.py              Public API exports
