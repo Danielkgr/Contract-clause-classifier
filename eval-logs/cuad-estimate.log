@@ -1,0 +1,37 @@
+Downloading CUAD_v1/CUAD_v1.json from theatticusproject/cuad...
+HTTP Request: GET https://huggingface.co/api/agent-harnesses "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/theatticusproject/cuad/resolve/main/CUAD_v1/CUAD_v1.json "HTTP/1.1 302 Found"
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+HTTP Request: GET https://huggingface.co/api/datasets/theatticusproject/cuad/xet-read-token/a3c393f5d103fd0c516374e4fdff676c8176dcb1 "HTTP/1.1 200 OK"
+Loaded 56 contracts from test split
+# Zero-shot cost estimate
+
+An estimate only.  No API call was made.
+
+| Input | Value |
+|---|---:|
+| Source | CUAD test split |
+| Contracts | 56 |
+| Characters | 2,370,988 |
+| Chunks of up to 24,000 characters, overlapping by 1,000 | 130 |
+| Clause types | 12 |
+
+| Prompt mode | Calls | Input tokens | Output tokens |
+|---|---:|---:|---:|
+| Multi-label | 130 | 0.66M | 0.03M |
+| Single-label | up to 1,560 | up to 7.59M | up to 0.31M |
+
+| Model | Multi-label | Single-label |
+|---|---:|---:|
+| `claude-opus-5-5` | $3.15 | up to $36.62 |
+| `claude-sonnet-5-5` | $1.57 | up to $18.31 |
+| `claude-haiku-4-5` | $0.79 | up to $9.15 |
+
+Assumptions:
+
+- Tokens are characters divided by 4.  Real counts depend on the model's tokenizer.
+- Each call returns 200 output tokens, thinking included.
+- No prompt-cache discount, and list prices without the Batches API discount.
+- Single-label figures are upper bounds, because a run stops asking about a clause type once one chunk of the contract has it.
+
