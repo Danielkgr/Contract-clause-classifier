@@ -1,48 +1,96 @@
 clause_type,method,arm,model,metric,value
+Governing Law,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,1.0
+Governing Law,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,1.0
+Governing Law,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,1.0
+Governing Law,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,1.0
 Governing Law,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,1.0
 Governing Law,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,1.0
 Governing Law,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,1.0
 Governing Law,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,1.0
+Anti-Assignment,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.8947368421052632
+Anti-Assignment,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.9444444444444444
+Anti-Assignment,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.918918918918919
+Anti-Assignment,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.8928571428571429
 Anti-Assignment,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.9459459459459459
 Anti-Assignment,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,0.9722222222222222
 Anti-Assignment,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.958904109589041
 Anti-Assignment,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.9464285714285714
+Cap On Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.8461538461538461
+Cap On Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.9166666666666666
+Cap On Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.88
+Cap On Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.8928571428571429
 Cap On Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.8888888888888888
 Cap On Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,0.6666666666666666
 Cap On Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.7619047619047619
 Cap On Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.8214285714285714
+Uncapped Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.5384615384615384
+Uncapped Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.7777777777777778
+Uncapped Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.6363636363636364
+Uncapped Liability,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.8571428571428571
 Uncapped Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.391304347826087
 Uncapped Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,1.0
 Uncapped Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.5625
 Uncapped Liability,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.75
+Audit Rights,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.75
+Audit Rights,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.8333333333333334
+Audit Rights,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.7894736842105263
+Audit Rights,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.8571428571428571
 Audit Rights,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.85
 Audit Rights,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,0.9444444444444444
 Audit Rights,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.8947368421052632
 Audit Rights,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.9285714285714286
+Termination For Convenience,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.5151515151515151
+Termination For Convenience,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.8095238095238095
+Termination For Convenience,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.6296296296296297
+Termination For Convenience,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.6428571428571429
 Termination For Convenience,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.7407407407407407
 Termination For Convenience,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,0.9523809523809523
 Termination For Convenience,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.8333333333333334
 Termination For Convenience,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.8571428571428571
+Change Of Control,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,1.0
+Change Of Control,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.1111111111111111
+Change Of Control,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.2
+Change Of Control,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.8571428571428571
 Change Of Control,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.4090909090909091
 Change Of Control,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,1.0
 Change Of Control,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.5806451612903226
 Change Of Control,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.7678571428571429
+Exclusivity,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.5909090909090909
+Exclusivity,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.8125
+Exclusivity,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.6842105263157895
+Exclusivity,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.7857142857142857
 Exclusivity,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.6666666666666666
 Exclusivity,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,0.875
 Exclusivity,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.7567567567567568
 Exclusivity,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.8392857142857143
+Non-Compete,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.7142857142857143
+Non-Compete,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.5
+Non-Compete,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.5882352941176471
+Non-Compete,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.875
 Non-Compete,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.7142857142857143
 Non-Compete,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,1.0
 Non-Compete,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.8333333333333334
 Non-Compete,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.9285714285714286
+Insurance,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,1.0
+Insurance,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.9473684210526315
+Insurance,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.972972972972973
+Insurance,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.9821428571428571
 Insurance,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.95
 Insurance,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,1.0
 Insurance,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.9743589743589743
 Insurance,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.9821428571428571
+License Grant,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.9259259259259259
+License Grant,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,1.0
+License Grant,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.9615384615384616
+License Grant,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.9642857142857143
 License Grant,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.8620689655172413
 License Grant,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,1.0
 License Grant,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.9259259259259259
 License Grant,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,accuracy,0.9285714285714286
+Warranty Duration,Fine-tuned roberta-base,fine_tuned,roberta-base,precision,0.4444444444444444
+Warranty Duration,Fine-tuned roberta-base,fine_tuned,roberta-base,recall,0.8
+Warranty Duration,Fine-tuned roberta-base,fine_tuned,roberta-base,f1,0.5714285714285714
+Warranty Duration,Fine-tuned roberta-base,fine_tuned,roberta-base,accuracy,0.8928571428571429
 Warranty Duration,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,precision,0.6666666666666666
 Warranty Duration,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,recall,0.8
 Warranty Duration,"Zero-shot claude-opus-5-5, multi-label",zero_shot,anthropic/claude-opus-5-5,f1,0.7272727272727273

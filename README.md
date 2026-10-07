@@ -4,7 +4,7 @@
 
 ### A zero-shot LLM against a fine-tuned transformer on contract clauses, compared on accuracy, cost, and latency
 
-![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![zero-shot arm measured](https://img.shields.io/badge/results-zero--shot_arm_only-9a6700?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) [![CI](https://img.shields.io/github/actions/workflow/status/Danielkgr/contract-clause-classifier/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/Danielkgr/contract-clause-classifier/actions/workflows/ci.yml) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
+![status prototype](https://img.shields.io/badge/status-prototype-9a6700?style=for-the-badge) ![both arms measured](https://img.shields.io/badge/results-both_arms_measured-1a7f37?style=for-the-badge) ![12 clause types](https://img.shields.io/badge/clause_types-12-0969da?style=for-the-badge) [![CI](https://img.shields.io/github/actions/workflow/status/Danielkgr/contract-clause-classifier/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/Danielkgr/contract-clause-classifier/actions/workflows/ci.yml) ![MIT licence](https://img.shields.io/badge/licence-MIT-57606a?style=for-the-badge)
 
 </div>
 
@@ -21,53 +21,55 @@ An evaluation harness.  It fine-tunes a RoBERTa classifier, prompts an LLM zero-
 > [!IMPORTANT]
 > It is not a deployed classifier.  It does not serve predictions, store contracts, or ship a production model.
 
-It is a working prototype.  Its tests run every stage on stand-in models and a mocked API, which checks the plumbing and says nothing about accuracy.  The zero-shot arm has been run once against the live API, and the fine-tuned arm has not been run.
+It is a working prototype.  Its tests run every stage on stand-in models and a mocked API, which checks the plumbing and says nothing about accuracy.  Both arms have been run once on the CUAD test split, the zero-shot arm against the live API and the fine-tuned arm on a local GPU.
 
 <br>
 
 ## Results
 
-One arm has been measured.  The zero-shot arm ran once on 6 October 2026 with `claude-opus-5-5` over all 56 CUAD test contracts.  **The fine-tuned arm has not been run**, because it needs a GPU, so the build-or-buy comparison the harness exists for is still open.
+Both arms have been measured once, on the same 56 CUAD test contracts and 12 clause types.  The zero-shot arm ran on 6 October 2026 with `claude-opus-5-5` through the Anthropic API.  The fine-tuned arm trained `roberta-base` on 7 October 2026 on a local AMD Radeon RX 7900 XTX, and scored the test contracts on the same card.
 
-| Measure, zero-shot `claude-opus-5-5`, multi-label | Value |
-|---|---|
-| Precision, macro average over the 12 clause types | 0.757 |
-| Recall, macro average | 0.934 |
-| F1, macro average | 0.818 |
-| Accuracy, macro average | 0.891 |
-| Calls | 130, none failed and none retried |
-| Average latency per contract | 7.1 seconds, from 1.3 to 35.2 |
-| Cost | $3.35 in total, $0.060 per contract |
+| Measure, macro average over 12 clause types | Fine-tuned `roberta-base` | Zero-shot `claude-opus-5-5` |
+|---|:--:|:--:|
+| Precision | 0.768 | 0.757 |
+| Recall | 0.788 | **0.934** |
+| F1 | 0.736 | **0.818** |
+| Accuracy | 0.875 | 0.891 |
+| Labelled clauses found | 206 of 237 | 223 of 237 |
+| False positives | 53 | 59 |
+| Average latency per contract | **0.58 seconds** of local GPU time | 7.1 seconds over the API |
+| Cost per contract | No per-call fee.  Training took 35 minutes on the same GPU. | $0.060 at list prices |
+| Where the contract text goes | Nowhere.  It stays on the machine. | To the model provider |
 
-| Clause type | Precision | Recall | F1 | TP | FP | FN | TN |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Governing Law | 1.000 | 1.000 | 1.000 | 45 | 0 | 0 | 11 |
-| Anti-Assignment | 0.946 | 0.972 | 0.959 | 35 | 2 | 1 | 18 |
-| Cap On Liability | 0.889 | 0.667 | 0.762 | 16 | 2 | 8 | 30 |
-| Uncapped Liability | 0.391 | 1.000 | 0.563 | 9 | 14 | 0 | 33 |
-| Audit Rights | 0.850 | 0.944 | 0.895 | 17 | 3 | 1 | 35 |
-| Termination For Convenience | 0.741 | 0.952 | 0.833 | 20 | 7 | 1 | 28 |
-| Change Of Control | 0.409 | 1.000 | 0.581 | 9 | 13 | 0 | 34 |
-| Exclusivity | 0.667 | 0.875 | 0.757 | 14 | 7 | 2 | 33 |
-| Non-Compete | 0.714 | 1.000 | 0.833 | 10 | 4 | 0 | 42 |
-| Insurance | 0.950 | 1.000 | 0.974 | 19 | 1 | 0 | 36 |
-| License Grant | 0.862 | 1.000 | 0.926 | 25 | 4 | 0 | 27 |
-| Warranty Duration | 0.667 | 0.800 | 0.727 | 4 | 2 | 1 | 49 |
+| Clause type | Fine-tuned F1 | Zero-shot F1 | Better |
+|---|:--:|:--:|---|
+| Governing Law | 1.000 | 1.000 | Tie |
+| Anti-Assignment | 0.919 | 0.959 | Zero-shot |
+| Cap On Liability | **0.880** | 0.762 | Fine-tuned |
+| Uncapped Liability | **0.636** | 0.563 | Fine-tuned |
+| Audit Rights | 0.789 | **0.895** | Zero-shot |
+| Termination For Convenience | 0.630 | **0.833** | Zero-shot |
+| Change Of Control | 0.200 | **0.581** | Zero-shot |
+| Exclusivity | 0.684 | **0.757** | Zero-shot |
+| Non-Compete | 0.588 | **0.833** | Zero-shot |
+| Insurance | 0.973 | 0.974 | Tie |
+| License Grant | **0.962** | 0.926 | Fine-tuned |
+| Warranty Duration | 0.571 | **0.727** | Zero-shot |
 
-The model finds most clauses that are there and over-reports some that are not.  It missed 14 of 237 labelled clauses, 8 of them caps on liability.  Almost half of its 59 false positives fall in two types, 14 for Uncapped Liability and 13 for Change Of Control, where it reported a clause in a contract that CUAD's annotators did not mark.  Nobody has yet read those contracts to say whether the model or the label is right, and some of the gap may be how narrowly CUAD defines each type.
+The zero-shot model finds more of the clauses that are there.  It missed 14 labelled clauses to the fine-tuned model's 31, and it scores higher F1 on seven of the twelve types.  The fine-tuned model's worst type is Change Of Control, where it found 1 of 9, and it also missed half the non-competes.  It does better on both liability types, where the zero-shot model either missed caps (8 of 24) or over-reported uncapped liability (14 false positives).  The two arms make about the same number of false positives overall, but in different places.  Nobody has yet read the disputed contracts to say whether a model or the label is right, and some of the gap may be how narrowly CUAD defines each type.
 
 > [!IMPORTANT]
-> These numbers are one run of one prompt at `low` effort on 56 contracts, so one contract moves a rare type's precision or recall by several points, and no interval is reported.  The cost is computed from each response's usage at list prices in `utils/pricing.py`, and the invoice is the authority.  The estimate before the run, from `compare_classifiers.py estimate`, was $3.15.
+> Each arm is one run at its default settings, with one seed for the fine-tune and one prompt for the zero-shot model.  Neither was tuned on these contracts, and no interval is reported.  With 56 contracts, one contract moves a rare type's precision or recall by several points, so the per-type differences are indicative, not settled.  The fine-tuned model's latency is the time to tokenise and score each contract's windows on one consumer GPU, with the model already loaded.  The zero-shot cost is computed from each response's usage at list prices in `utils/pricing.py`, and the invoice is the authority.
 
-The run's artefacts sit in `outputs/`.  `zero_shot-claude-opus-5-5-multi.json` holds every contract's labels, predictions, latency, cost, and token counts, and `comparison_report.md`, `summary.md`, `comparison_metrics.csv`, and `comparison_plot.png` were written from it by `compare_classifiers.py compare`.  [outputs/PROVENANCE.md](outputs/PROVENANCE.md) records how the run was made, and the console output is in `eval-logs/`.
+On this run the trade-off is the one the harness was built to expose.  The zero-shot model is more accurate here, needs no training, and costs about six cents a contract.  The fine-tuned model is about twelve times faster, has no per-call fee, and keeps every contract in-house, at the price of a training run and weaker recall on the rarer types.
 
-The guidance in [Choosing between the two](#choosing-between-the-two) is still qualitative, because the fine-tuned arm it compares against has not been measured.
+The artefacts sit in `outputs/`.  `zero_shot-claude-opus-5-5-multi.json` and `fine_tuned-roberta-base.json` hold every contract's labels, predictions, latency, and, for the zero-shot arm, cost and token counts.  `comparison_report.md`, `summary.md`, `comparison_metrics.csv`, and `comparison_plot.png` were written from those two files by `compare_classifiers.py compare`.  [outputs/PROVENANCE.md](outputs/PROVENANCE.md) records how each run was made, and the console output of both is in `eval-logs/`.  The trained model is not committed.
 
 <br>
 
 ## Running the comparison
 
-No run has been made yet.  These are the four steps to make one, in order and cheapest first.
+These are the four steps to make a run, in order and cheapest first.
 
 ### Estimate the cost, with no API key
 
@@ -123,6 +125,8 @@ Fine-tuning RoBERTa needs a GPU in practice, for example a Google Colab notebook
 ```
 
 It trains on the 401 training contracts, checks progress against the 53 validation contracts, scores the 56 test contracts, and writes `outputs/fine_tuned-roberta-base.json`.  In Colab, `from google.colab import files; files.download("outputs/fine_tuned-roberta-base.json")` downloads that file.  Put it in `outputs/` next to the zero-shot results.
+
+The published run used a local AMD Radeon RX 7900 XTX instead, with PyTorch 2.14.1 built for ROCm 7.14, and trained in 35 minutes.  Any GPU that PyTorch supports will do.
 
 ### Write the report
 
@@ -204,7 +208,7 @@ Both arms are timed per contract.  For the LLM, that is the sum of its calls, an
 
 ### Choosing between the two
 
-These are the trade-offs the report is built to test.  The zero-shot column's cost and latency are now measured, at $0.060 and about 7 seconds per contract, but the fine-tuned arm has not been run, so the comparison itself is still an expectation, not a finding.
+These are the trade-offs the report is built to test.  The run in [Results](#results) bears out the setup, running cost, latency, and data handling rows.  It also found something the table does not say, that on these contracts the zero-shot model was the more accurate, so the fine-tuned model's case rests on speed, cost at volume, and keeping the text in-house.  The volume and best fit rows are judgements the run cannot test.
 
 | Consideration | Zero-shot LLM | Fine-tuned model |
 |---|---|---|
