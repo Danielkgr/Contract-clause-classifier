@@ -40,3 +40,17 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Test
         run: pytest
+
+  no-venv:
+    name: no virtual environment committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # .gitignore only knows the usual names.  pyvenv.cfg marks any venv, virtualenv
+      # or uv environment whatever it is called, and site-packages/ catches conda ones.
+      - name: Fail if a virtual environment is tracked
+        run: |
+          if git ls-files | grep -E '(^|/)(pyvenv\.cfg$|site-packages/)'; then
+            echo "::error::A Python virtual environment is committed.  Untrack it with 'git rm -r --cached <dir>' and add the directory to .gitignore."
+            exit 1
+          fi

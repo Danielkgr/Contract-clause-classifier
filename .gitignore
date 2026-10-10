@@ -11,10 +11,11 @@ eggs/
 .wheel/
 
 # Virtual environments
-.venv/
-venv/
+.venv*/
+venv*/
 env/
 ENV/
+.conda/
 
 # Jupyter
 .ipynb_checkpoints/
